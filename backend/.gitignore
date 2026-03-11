@@ -1,0 +1,6 @@
+data/
+data/tokens.json
+logs/
+dist/
+node_modules/
+.env
