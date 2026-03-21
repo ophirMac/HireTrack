@@ -10,9 +10,7 @@ import scanRouter from './routes/scan';
 import leadsRouter from './routes/leads';
 import { errorHandler, notFoundHandler } from './middleware/error';
 import { openAIService } from './services/openai.service';
-
-const PORT = parseInt(process.env.PORT ?? '3001', 10);
-const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN ?? 'http://localhost:3000';
+import { BACKEND_PUBLIC_URL, FRONTEND_ORIGIN, PORT } from './config/env';
 
 // ─── App Setup ────────────────────────────────────────────────────────────────
 
@@ -57,9 +55,9 @@ function main(): void {
   getDb();
 
   app.listen(PORT, () => {
-    logger.info(`HireTrack backend running on http://localhost:${PORT}`);
+    logger.info(`HireTrack backend running on ${BACKEND_PUBLIC_URL}`);
     logger.info(`Frontend expected at ${FRONTEND_ORIGIN}`);
-    logger.info(`OAuth endpoint: http://localhost:${PORT}/auth/google`);
+    logger.info(`OAuth endpoint: ${BACKEND_PUBLIC_URL}/auth/google`);
 
     // Start scan scheduler
     startScheduler();

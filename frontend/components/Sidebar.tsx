@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import clsx from 'clsx';
+import { GOOGLE_AUTH_URL } from '@/lib/api';
 
 const nav = [
   {
@@ -76,7 +77,7 @@ export default function Sidebar() {
       {/* Footer */}
       <div className="px-4 py-4 border-t border-surface-border">
         <a
-          href="http://localhost:3001/auth/google"
+          href={GOOGLE_AUTH_URL}
           className="block text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
         >
           Reconnect Gmail →

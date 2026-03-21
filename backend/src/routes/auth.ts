@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { gmailService } from '../services/gmail.service';
 import { logger } from '../utils/logger';
+import { FRONTEND_ORIGIN } from '../config/env';
 
 const router = Router();
 
@@ -29,14 +30,10 @@ router.get('/callback', async (req: Request, res: Response) => {
     await gmailService.exchangeCodeForTokens(code);
     logger.info('Gmail OAuth completed successfully');
     // Redirect to frontend success page
-    res.redirect(
-      `${process.env.FRONTEND_ORIGIN ?? 'http://localhost:3000'}?auth=success`
-    );
+    res.redirect(`${FRONTEND_ORIGIN}?auth=success`);
   } catch (err) {
     logger.error('OAuth token exchange failed', { error: String(err) });
-    res.redirect(
-      `${process.env.FRONTEND_ORIGIN ?? 'http://localhost:3000'}?auth=error`
-    );
+    res.redirect(`${FRONTEND_ORIGIN}?auth=error`);
   }
 });
 

@@ -1,7 +1,7 @@
 'use client';
 
 import useSWR from 'swr';
-import { fetchScanStatus } from '@/lib/api';
+import { API_BASE, fetchScanStatus } from '@/lib/api';
 import ScanProgressPanel from '@/components/ScanProgressPanel';
 
 export default function ScanPage() {
@@ -49,7 +49,7 @@ export default function ScanPage() {
       ) : error ? (
         <div className="card p-6 text-center">
           <p className="text-sm text-red-400">Failed to load scan status.</p>
-          <p className="text-xs text-zinc-600 mt-1">Is the backend running on port 3001?</p>
+          <p className="text-xs text-zinc-600 mt-1">Is the backend reachable at {API_BASE}?</p>
         </div>
       ) : data ? (
         <ScanProgressPanel data={data} onRefresh={() => mutate()} />

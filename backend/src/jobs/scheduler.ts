@@ -22,6 +22,7 @@ import { scannerService } from '../services/scanner.service';
 import { gmailService } from '../services/gmail.service';
 import { openAIService } from '../services/openai.service';
 import { logger } from '../utils/logger';
+import { BACKEND_PUBLIC_URL } from '../config/env';
 
 export function startScheduler(): void {
   if (!openAIService.isConfigured()) {
@@ -35,7 +36,7 @@ export function startScheduler(): void {
   setTimeout(async () => {
     if (!gmailService.isAuthenticated()) {
       logger.warn('[scheduler] Gmail not authenticated — skipping startup scan');
-      logger.warn('[scheduler] Complete OAuth at http://localhost:3001/auth/google');
+      logger.warn(`[scheduler] Complete OAuth at ${BACKEND_PUBLIC_URL}/auth/google`);
       return;
     }
 

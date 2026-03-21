@@ -146,16 +146,25 @@ npm install
 
 ```bash
 cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env.local
 ```
 
 Edit `backend/.env`:
 
 ```
+PORT=3001
+BACKEND_PUBLIC_URL=http://localhost:3001
 GOOGLE_CLIENT_ID=your_client_id_from_step_2
 GOOGLE_CLIENT_SECRET=your_client_secret_from_step_2
 GOOGLE_REDIRECT_URI=http://localhost:3001/auth/callback
 OPENAI_API_KEY=sk-...
 SCAN_START_DATE=2026/01/01
+```
+
+Edit `frontend/.env.local`:
+
+```
+NEXT_PUBLIC_API_URL=http://localhost:3001
 ```
 
 ### 5. Connect Gmail (One-Time)

@@ -5,6 +5,8 @@ import {
   fetchCompanies,
   fetchAuthStatus,
   deleteCompany as deleteCompanyApi,
+  API_BASE,
+  GOOGLE_AUTH_URL,
 } from '@/lib/api';
 import CompanyCard from '@/components/CompanyCard';
 import StatusBadge from '@/components/StatusBadge';
@@ -102,7 +104,7 @@ export default function DashboardPage() {
               </p>
             </div>
             <a
-              href="http://localhost:3001/auth/google"
+              href={GOOGLE_AUTH_URL}
               className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 text-xs font-medium transition-colors"
             >
               Connect Gmail →
@@ -172,7 +174,7 @@ export default function DashboardPage() {
       ) : error ? (
         <div className="card p-6 text-center">
           <p className="text-sm text-red-400">Failed to load companies.</p>
-          <p className="text-xs text-zinc-600 mt-1">Is the backend running on port 3001?</p>
+          <p className="text-xs text-zinc-600 mt-1">Is the backend reachable at {API_BASE}?</p>
         </div>
       ) : companies.length === 0 ? (
         <div className="card p-8 text-center">
