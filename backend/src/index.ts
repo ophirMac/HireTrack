@@ -28,6 +28,10 @@ app.use(express.json());
 
 // ─── Health ────────────────────────────────────────────────────────────────────
 
+app.get('/', (_req, res) => {
+  res.json({ status: 'ok', ts: new Date().toISOString() });
+});
+
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', ts: new Date().toISOString() });
 });
