@@ -1,30 +1,65 @@
 'use client';
 
 import useSWR from 'swr';
-import { fetchCompanies, fetchAuthStatus } from '@/lib/api';
+import {
+  fetchCompanies,
+  fetchAuthStatus,
+  deleteCompany as deleteCompanyApi,
+} from '@/lib/api';
 import CompanyCard from '@/components/CompanyCard';
 import StatusBadge from '@/components/StatusBadge';
-import type { ApplicationStatus } from '@/lib/types';
-import { useState, useMemo } from 'react';
+import type { ApplicationStatus, Company } from '@/lib/types';
+import { useState, useMemo, useCallback } from 'react';
 import clsx from 'clsx';
 
 const STATUS_FILTERS: Array<{ label: string; value: ApplicationStatus | 'all' }> = [
   { label: 'All', value: 'all' },
   { label: 'Applied', value: 'applied' },
-  { label: 'Interview', value: 'interview' },
+  { label: 'Rejected', value: 'rejected' },
   { label: 'Offer', value: 'offer' },
-  { label: 'Rejection', value: 'rejection' },
-  { label: 'Recruiter', value: 'recruiter_reachout' },
 ];
 
 export default function DashboardPage() {
-  const { data, error, isLoading } = useSWR('companies', fetchCompanies, {
+  const { data, error, isLoading, mutate } = useSWR('companies', fetchCompanies, {
     refreshInterval: 30_000,
   });
   const { data: authData } = useSWR('auth-status', fetchAuthStatus);
 
   const [filter, setFilter] = useState<ApplicationStatus | 'all'>('all');
   const [search, setSearch] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState<Company | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDeleteClick = useCallback((company: Company) => {
+    setConfirmDelete(company);
+  }, []);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!confirmDelete) return;
+    const target = confirmDelete;
+    setConfirmDelete(null);
+    setDeletingId(target.id);
+    setDeleteError(null);
+
+    // Snapshot for rollback
+    const snapshot = data;
+    // Optimistic removal
+    if (data) {
+      mutate({ companies: data.companies.filter((c) => c.id !== target.id) }, false);
+    }
+
+    try {
+      await deleteCompanyApi(target.id);
+      mutate(); // revalidate from server
+    } catch (err) {
+      mutate(snapshot, false); // rollback
+      setDeleteError(err instanceof Error ? err.message : 'Failed to delete company');
+    } finally {
+      setDeletingId(null);
+    }
+  }, [confirmDelete, data, mutate]);
+
 
   const companies = useMemo(() => {
     if (!data?.companies) return [];
@@ -43,9 +78,7 @@ export default function DashboardPage() {
   const totalInteractions =
     data?.companies.reduce((sum, c) => sum + c.interaction_count, 0) ?? 0;
   const activeApplications =
-    data?.companies.filter((c) =>
-      ['applied', 'interview', 'assignment'].includes(c.current_status)
-    ).length ?? 0;
+    data?.companies.filter((c) => c.current_status === 'applied').length ?? 0;
   const offers = data?.companies.filter((c) => c.current_status === 'offer').length ?? 0;
 
   return (
@@ -152,8 +185,67 @@ export default function DashboardPage() {
       ) : (
         <div className="space-y-2">
           {companies.map((company) => (
-            <CompanyCard key={company.id} company={company} />
+            <CompanyCard
+              key={company.id}
+              company={company}
+              onDeleteClick={handleDeleteClick}
+              isDeleting={deletingId === company.id}
+            />
           ))}
+        </div>
+      )}
+
+      {/* Delete error toast */}
+      {deleteError && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm shadow-lg">
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>{deleteError}</span>
+          <button
+            onClick={() => setDeleteError(null)}
+            className="ml-1 text-red-400/60 hover:text-red-400 transition-colors"
+            aria-label="Dismiss error"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
+
+
+      {/* Delete confirmation modal */}
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setConfirmDelete(null)}
+        >
+          <div
+            className="w-full max-w-sm mx-4 card p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-base font-semibold text-zinc-100 mb-2">Delete company?</h2>
+            <p className="text-sm text-zinc-400 mb-6">
+              This will permanently remove{' '}
+              <span className="font-medium text-zinc-200">{confirmDelete.name}</span> and
+              all its related application data.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-zinc-400 hover:text-zinc-200 hover:bg-surface-elevated transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 border border-red-500/30 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

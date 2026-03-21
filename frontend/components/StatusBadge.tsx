@@ -10,27 +10,7 @@ const STATUS_CONFIG: Record<
     className: 'bg-indigo-500/15 text-indigo-400 border-indigo-500/20',
     dot: 'bg-indigo-400',
   },
-  confirmation: {
-    label: 'Confirmed',
-    className: 'bg-sky-500/15 text-sky-400 border-sky-500/20',
-    dot: 'bg-sky-400',
-  },
-  recruiter_reachout: {
-    label: 'Recruiter',
-    className: 'bg-violet-500/15 text-violet-400 border-violet-500/20',
-    dot: 'bg-violet-400',
-  },
-  interview: {
-    label: 'Interview',
-    className: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
-    dot: 'bg-amber-400',
-  },
-  assignment: {
-    label: 'Assignment',
-    className: 'bg-orange-500/15 text-orange-400 border-orange-500/20',
-    dot: 'bg-orange-400',
-  },
-  rejection: {
+  rejected: {
     label: 'Rejected',
     className: 'bg-red-500/15 text-red-400 border-red-500/20',
     dot: 'bg-red-400',
@@ -40,20 +20,15 @@ const STATUS_CONFIG: Record<
     className: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20',
     dot: 'bg-emerald-400',
   },
-  unknown: {
-    label: 'Unknown',
-    className: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/20',
-    dot: 'bg-zinc-500',
-  },
 };
 
 interface Props {
-  status: ApplicationStatus;
+  status: ApplicationStatus | string;
   size?: 'sm' | 'md';
 }
 
 export default function StatusBadge({ status, size = 'md' }: Props) {
-  const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.unknown;
+  const config = STATUS_CONFIG[status as ApplicationStatus] ?? STATUS_CONFIG.applied;
 
   return (
     <span

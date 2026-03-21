@@ -15,13 +15,8 @@ import { withRetry, withTimeout, isTransientError } from '../utils/retry';
 
 export type ApplicationStatus =
   | 'applied'
-  | 'confirmation'
-  | 'recruiter_reachout'
-  | 'interview'
-  | 'assignment'
-  | 'rejection'
-  | 'offer'
-  | 'unknown';
+  | 'rejected'
+  | 'offer';
 
 export interface ExtractionResult {
   companyName: string | null;
@@ -31,15 +26,15 @@ export interface ExtractionResult {
   confidence: number; // 0.0–1.0
 }
 
+export interface ClassificationResult {
+  isJobRelated: boolean;
+  confidence: number; // 0.0–1.0
+}
+
 const ALLOWED_STATUSES: ApplicationStatus[] = [
   'applied',
-  'confirmation',
-  'recruiter_reachout',
-  'interview',
-  'assignment',
-  'rejection',
   'offer',
-  'unknown',
+  'rejected',
 ];
 
 export class OpenAIService {
@@ -54,33 +49,77 @@ export class OpenAIService {
 
   // ─── Classification ────────────────────────────────────────────────────────
 
-  /**
-   * Returns true if the email appears to be a job application-related message.
-   * Uses a very cheap / fast prompt — we run this on EVERY email.
-   */
-  async classify(
+  /** Lightweight stage-1 classification using metadata + snippet only. */
+  async classifySnippet(
     subject: string | null,
     snippet: string | null,
     fromAddress: string | null
-  ): Promise<boolean> {
-    const prompt = `You are a classifier that detects job-application-related emails.
+  ): Promise<ClassificationResult> {
+    const prompt = `You are a strict classifier for HireTrack.
 
-Consider an email job-related if it involves:
-- Job applications (submitted, accepted, rejected)
-- Recruiter outreach or sourcing messages
-- Interview scheduling or confirmation
-- Take-home assignments or coding challenges
-- Offer letters or negotiations
-- Application status updates from an employer or ATS system
+Classify as job-related ONLY if this is a direct interaction about a real candidacy with a specific employer
+(or an ATS email clearly sent on behalf of a specific employer).
+
+Classify as NOT job-related for:
+- Job alerts, job matches, digests, newsletters, or recommended jobs
+- Emails from job-search tools/automation platforms about account setup, auto-apply activity, or generic progress
+- Resume/CV/cover-letter tooling, coaching, billing, or marketing
+- Generic account verification/welcome/password-reset messages without employer-specific candidacy context
 
 Input:
 From: ${fromAddress ?? 'unknown'}
 Subject: ${subject ?? '(no subject)'}
 Snippet: ${snippet ?? '(empty)'}
 
-Respond with JSON only: {"is_job_related": true} or {"is_job_related": false}
+Respond with JSON only and exactly these fields:
+{"is_job_related": true|false, "confidence": 0.0-1.0}
+
+Confidence should reflect certainty from snippet-only evidence.
 No explanation.`;
 
+    return this.runClassification(prompt, 'openai.classifySnippet');
+  }
+
+  /** Stage-2 classification using complete content (authoritative). */
+  async classifyFullContent(params: {
+    subject: string | null;
+    snippet: string | null;
+    fromAddress: string | null;
+    fromName: string | null;
+    bodyText: string | null;
+  }): Promise<ClassificationResult> {
+    const bodyPreview = (params.bodyText ?? '').slice(0, 4_000);
+
+    const prompt = `You are a strict classifier for HireTrack.
+
+Decide whether this email is job-related using complete content.
+Classify as job-related ONLY if this is a direct interaction about a real candidacy with a specific employer
+(or an ATS email clearly sent on behalf of that employer).
+
+Classify as NOT job-related for:
+- Job alerts, job matches, digests, newsletters, or recommended jobs
+- Emails from job-search tools/automation platforms about account setup, auto-apply activity, or generic progress
+- Resume/CV/cover-letter tooling, coaching, billing, or marketing
+- Generic account verification/welcome/password-reset messages without employer-specific candidacy context
+
+Input:
+From: ${params.fromAddress ?? 'unknown'} (${params.fromName ?? 'unknown'})
+Subject: ${params.subject ?? '(no subject)'}
+Snippet: ${params.snippet ?? '(empty)'}
+Body:
+${bodyPreview || '(empty)'}
+
+Respond with JSON only and exactly these fields:
+{"is_job_related": true|false, "confidence": 0.0-1.0}
+No explanation.`;
+
+    return this.runClassification(prompt, 'openai.classifyFullContent');
+  }
+
+  private async runClassification(
+    prompt: string,
+    context: string
+  ): Promise<ClassificationResult> {
     return withRetry(
       async () => {
         const response = await withTimeout(
@@ -89,24 +128,40 @@ No explanation.`;
               model: 'gpt-4o-mini',
               messages: [{ role: 'user', content: prompt }],
               response_format: { type: 'json_object' },
-              max_tokens: 30,
+              max_tokens: 60,
               temperature: 0,
             }),
           12_000,
-          'openai.classify'
+          context
         );
 
         const raw = response.choices[0]?.message?.content ?? '{}';
-        const parsed = JSON.parse(raw) as { is_job_related?: boolean };
-        return parsed.is_job_related === true;
+        return this.parseClassification(raw);
       },
       {
         maxAttempts: 3,
         initialDelayMs: 1_500,
         shouldRetry: isTransientError,
-        context: 'openai.classify',
+        context,
       }
     );
+  }
+
+  private parseClassification(raw: string): ClassificationResult {
+    try {
+      const parsed = JSON.parse(raw) as { is_job_related?: boolean; confidence?: unknown };
+      const confidence =
+        typeof parsed.confidence === 'number'
+          ? Math.max(0, Math.min(1, parsed.confidence))
+          : 0.5;
+      return {
+        isJobRelated: parsed.is_job_related === true,
+        confidence,
+      };
+    } catch (err) {
+      logger.warn('Failed to parse OpenAI classification response', { raw, error: String(err) });
+      return { isJobRelated: false, confidence: 0 };
+    }
   }
 
   // ─── Extraction ────────────────────────────────────────────────────────────
@@ -131,18 +186,20 @@ Analyze this email and return a JSON object with exactly these fields:
 - company_name: string | null — employer company name
 - company_domain: string | null — company website domain (e.g. "google.com"), infer from sender domain if possible
 - job_role: string | null — the position/role title (e.g. "Senior Software Engineer")
-- status: one of exactly: "applied" | "confirmation" | "recruiter_reachout" | "interview" | "assignment" | "rejection" | "offer" | "unknown"
+- status: one of exactly: "applied" | "rejected" | "offer"
 - confidence: number 0.0–1.0 — your confidence in the extraction
 
 Status definitions:
-- applied: You submitted an application
-- confirmation: Application received/acknowledged by employer
-- recruiter_reachout: A recruiter messaged you proactively (cold outreach)
-- interview: Interview scheduled or conducted
-- assignment: Take-home test, coding challenge, or work assignment
-- rejection: Application was declined
+- applied: Any non-final application stage (submission, confirmation, recruiter email, interview, assignment, or unclear progress)
+- rejected: Application was declined
 - offer: Job offer extended
-- unknown: Cannot determine context
+
+Important rules:
+- The employer must be the hiring company, not the platform/tool sending the email.
+- Never use a job-search platform (e.g. AIApply, LinkedIn, Indeed) as employer unless the email clearly says the job is at that platform.
+- If the real hiring company is unknown, set company_name and company_domain to null.
+- If role title is missing, set job_role to null.
+- If employer identity is unknown or the email looks like platform/marketing automation, keep confidence <= 0.4.
 
 Email data:
 From: ${params.fromAddress ?? 'unknown'} (${params.fromName ?? 'unknown'})
@@ -185,9 +242,10 @@ Return JSON only. No explanation.`;
     try {
       const parsed = JSON.parse(raw) as Record<string, unknown>;
 
-      const status = ALLOWED_STATUSES.includes(parsed.status as ApplicationStatus)
-        ? (parsed.status as ApplicationStatus)
-        : 'unknown';
+      const normalizedStatus = this.normalizeStatus(parsed.status);
+      const status = ALLOWED_STATUSES.includes(normalizedStatus)
+        ? normalizedStatus
+        : 'applied';
 
       const confidence =
         typeof parsed.confidence === 'number'
@@ -209,10 +267,17 @@ Return JSON only. No explanation.`;
         companyName: null,
         companyDomain: null,
         jobRole: null,
-        status: 'unknown',
+        status: 'applied',
         confidence: 0,
       };
     }
+  }
+
+  private normalizeStatus(raw: unknown): ApplicationStatus {
+    const status = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+    if (status.includes('offer')) return 'offer';
+    if (status.includes('reject') || status.includes('declin')) return 'rejected';
+    return 'applied';
   }
 
   private normalizeDomain(raw: string | null): string | null {

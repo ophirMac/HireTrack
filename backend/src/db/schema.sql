@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS companies (
   name                  TEXT    NOT NULL,
   domain                TEXT,
   logo_url              TEXT,
-  current_status        TEXT    NOT NULL DEFAULT 'unknown',
+  current_status        TEXT    NOT NULL DEFAULT 'applied',
+  status_override       INTEGER NOT NULL DEFAULT 0,
   first_interaction_at  TEXT,
   last_interaction_at   TEXT,
   created_at            TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
@@ -44,8 +45,13 @@ CREATE TABLE IF NOT EXISTS emails (
   from_address        TEXT,
   from_name           TEXT,
   received_at         TEXT,
+  body_text           TEXT,
   raw_payload_json    TEXT,
+  initial_is_job_related             INTEGER, -- snippet-only stage decision
+  initial_classification_confidence  REAL,    -- snippet-only confidence
   is_job_related      INTEGER,              -- 1 yes, 0 no, NULL unclassified
+  final_classification_confidence    REAL,    -- authoritative stage confidence
+  full_body_fetched   INTEGER NOT NULL DEFAULT 0, -- 0 not fetched, 1 fetched
   processed_flag      INTEGER NOT NULL DEFAULT 0,  -- 0 pending, 1 done
   created_at          TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
@@ -65,7 +71,7 @@ CREATE TABLE IF NOT EXISTS job_interactions (
   company_id            INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
   email_id              INTEGER NOT NULL UNIQUE REFERENCES emails(id) ON DELETE CASCADE,
   role                  TEXT,
-  status                TEXT    NOT NULL DEFAULT 'unknown',
+  status                TEXT    NOT NULL DEFAULT 'applied',
   extracted_confidence  REAL,
   raw_extraction_json   TEXT,
   created_at            TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
@@ -93,6 +99,46 @@ CREATE TABLE IF NOT EXISTS scan_runs (
 
 CREATE INDEX IF NOT EXISTS idx_scan_runs_started ON scan_runs(started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_scan_runs_status  ON scan_runs(status);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- leads
+-- Manual pre-application tracking records. Each row is a potential opportunity
+-- the user is nurturing before formally applying.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS leads (
+  id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+  company_name          TEXT    NOT NULL,
+  role                  TEXT,
+  contact_person        TEXT,
+  contact_source        TEXT,                        -- linkedin/email/referral/event/other
+  date_first_contacted  TEXT,                        -- ISO date string
+  status                TEXT    NOT NULL DEFAULT 'researching',
+  notes                 TEXT,
+  converted_company_id  INTEGER REFERENCES companies(id) ON DELETE SET NULL,
+  created_at            TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+  updated_at            TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_leads_status       ON leads(status);
+CREATE INDEX IF NOT EXISTS idx_leads_company_name ON leads(company_name COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_leads_updated      ON leads(updated_at DESC);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- lead_moves
+-- Timeline of interaction actions per lead.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS lead_moves (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id           INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  date              TEXT    NOT NULL,
+  description       TEXT    NOT NULL,
+  person_contacted  TEXT,
+  link              TEXT,
+  created_at        TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_lead_moves_lead_id ON lead_moves(lead_id);
+CREATE INDEX IF NOT EXISTS idx_lead_moves_date    ON lead_moves(date DESC);
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- sync_state

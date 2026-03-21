@@ -2,13 +2,8 @@
 
 export type ApplicationStatus =
   | 'applied'
-  | 'confirmation'
-  | 'recruiter_reachout'
-  | 'interview'
-  | 'assignment'
-  | 'rejection'
-  | 'offer'
-  | 'unknown';
+  | 'rejected'
+  | 'offer';
 
 export interface Company {
   id: number;
@@ -79,4 +74,55 @@ export interface CompaniesResponse {
 export interface CompanyDetailResponse {
   company: Company;
   interactions: JobInteraction[];
+}
+
+// ─── Leads ────────────────────────────────────────────────────────────────────
+
+export type LeadStatus =
+  | 'researching'
+  | 'contacted'
+  | 'waiting_response'
+  | 'preparing_to_apply'
+  | 'applied'
+  | 'converted';
+
+export type LeadSource = 'linkedin' | 'email' | 'referral' | 'event' | 'other';
+
+export interface Lead {
+  id: number;
+  company_name: string;
+  role: string | null;
+  contact_person: string | null;
+  contact_source: LeadSource | null;
+  date_first_contacted: string | null;
+  status: LeadStatus;
+  notes: string | null;
+  converted_company_id: number | null;
+  created_at: string;
+  updated_at: string;
+  move_count: number;
+}
+
+export interface LeadMove {
+  id: number;
+  lead_id: number;
+  date: string;
+  description: string;
+  person_contacted: string | null;
+  link: string | null;
+  created_at: string;
+}
+
+export interface LeadsResponse {
+  leads: Lead[];
+}
+
+export interface LeadDetailResponse {
+  lead: Lead;
+  moves: LeadMove[];
+}
+
+export interface ConvertLeadResponse {
+  lead: Lead;
+  company: Company;
 }

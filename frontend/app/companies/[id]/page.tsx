@@ -2,21 +2,54 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import useSWR from 'swr';
-import { fetchCompany } from '@/lib/api';
+import { fetchCompany, updateCompanyStatus as updateCompanyStatusApi } from '@/lib/api';
 import Timeline from '@/components/Timeline';
 import StatusBadge from '@/components/StatusBadge';
+import StatusSelect from '@/components/StatusSelect';
 import Image from 'next/image';
 import { formatDistanceToNow, format } from 'date-fns';
+import type { ApplicationStatus } from '@/lib/types';
+import { useState, useCallback } from 'react';
 
 export default function CompanyDetailPage() {
   const router = useRouter();
   const params = useParams();
   const id = parseInt(params.id as string, 10);
 
-  const { data, error, isLoading } = useSWR(
+  const { data, error, isLoading, mutate } = useSWR(
     isNaN(id) ? null : `company-${id}`,
     () => fetchCompany(id),
     { refreshInterval: 30_000 }
+  );
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+
+  const handleStatusChange = useCallback(
+    async (status: ApplicationStatus) => {
+      if (!data?.company) return;
+      setIsUpdatingStatus(true);
+      setStatusError(null);
+      const snapshot = data;
+
+      mutate(
+        {
+          company: { ...data.company, current_status: status },
+          interactions: data.interactions,
+        },
+        false
+      );
+
+      try {
+        await updateCompanyStatusApi(data.company.id, status);
+        mutate();
+      } catch (err) {
+        mutate(snapshot, false);
+        setStatusError(err instanceof Error ? err.message : 'Failed to update status');
+      } finally {
+        setIsUpdatingStatus(false);
+      }
+    },
+    [data, mutate]
   );
 
   if (isNaN(id)) {
@@ -50,6 +83,8 @@ export default function CompanyDetailPage() {
   }
 
   const { company, interactions } = data;
+
+  const latestStatus: ApplicationStatus = company.current_status;
 
   return (
     <div className="px-6 py-6 max-w-3xl mx-auto">
@@ -88,7 +123,12 @@ export default function CompanyDetailPage() {
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-3 mb-1">
               <h1 className="text-lg font-semibold text-zinc-100">{company.name}</h1>
-              <StatusBadge status={company.current_status} />
+              <StatusBadge status={latestStatus} />
+              <StatusSelect
+                value={latestStatus}
+                onChange={handleStatusChange}
+                disabled={isUpdatingStatus}
+              />
             </div>
 
             {company.domain && (
@@ -138,6 +178,24 @@ export default function CompanyDetailPage() {
         </h2>
         <Timeline interactions={interactions} />
       </div>
+
+      {statusError && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm shadow-lg">
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <span>{statusError}</span>
+          <button
+            onClick={() => setStatusError(null)}
+            className="ml-1 text-red-400/60 hover:text-red-400 transition-colors"
+            aria-label="Dismiss error"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
     </div>
   );
 }

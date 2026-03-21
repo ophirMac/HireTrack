@@ -7,6 +7,7 @@ import { startScheduler } from './jobs/scheduler';
 import authRouter from './routes/auth';
 import companiesRouter from './routes/companies';
 import scanRouter from './routes/scan';
+import leadsRouter from './routes/leads';
 import { errorHandler, notFoundHandler } from './middleware/error';
 
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
@@ -37,6 +38,7 @@ app.get('/health', (_req, res) => {
 app.use('/auth', authRouter);
 app.use('/api/companies', companiesRouter);
 app.use('/api/scan', scanRouter);
+app.use('/api/leads', leadsRouter);
 
 // ─── Error Handling ───────────────────────────────────────────────────────────
 

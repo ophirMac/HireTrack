@@ -11,7 +11,7 @@
  *
  * Status progression:
  *  The company's current_status is set to the status of the most
- *  recently-received job email with a non-unknown, non-confirmation status.
+ *  recently-received job email.
  *  If the latest email has a meaningful status, it always wins.
  *
  * This ensures the status accurately reflects the latest state in the
@@ -30,13 +30,9 @@ import { ExtractionResult } from './openai.service';
 import { logger } from '../utils/logger';
 
 // Statuses that are meaningful progression signals.
-// Everything except 'unknown' and bare 'confirmation' is meaningful.
 const MEANINGFUL_STATUSES = new Set([
   'applied',
-  'recruiter_reachout',
-  'interview',
-  'assignment',
-  'rejection',
+  'rejected',
   'offer',
 ]);
 
@@ -47,7 +43,8 @@ export class CompanyService {
    */
   findOrCreate(
     extraction: ExtractionResult,
-    fromAddress: string | null
+    fromAddress: string | null,
+    interactionAt: string | null
   ): Company {
     const senderDomain = this.parseDomain(fromAddress);
     const extractedDomain = extraction.companyDomain;
@@ -97,12 +94,13 @@ export class CompanyService {
       'Unknown Company';
 
     const now = new Date().toISOString();
+    const interactionTime = interactionAt ?? now;
     const company = createCompany({
       name: resolvedName,
       domain: resolvedDomain,
       current_status: extraction.status,
-      first_interaction_at: now,
-      last_interaction_at: now,
+      first_interaction_at: interactionTime,
+      last_interaction_at: interactionTime,
     });
 
     logger.info(`Created new company: ${resolvedName}`, {
@@ -121,8 +119,8 @@ export class CompanyService {
     if (MEANINGFUL_STATUSES.has(newStatus)) {
       updateCompanyStatus(companyId, newStatus, interactionAt);
     } else {
-      // Still update last_interaction_at even if status is weak
-      updateCompanyStatus(companyId, 'confirmation', interactionAt);
+      // Fallback weak/legacy statuses to "applied".
+      updateCompanyStatus(companyId, 'applied', interactionAt);
     }
   }
 

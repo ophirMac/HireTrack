@@ -97,6 +97,34 @@ export class GmailService {
     });
   }
 
+  /**
+   * Returns true if the error is an OAuth invalid_grant, meaning the refresh
+   * token has expired or been revoked and the user must re-authenticate.
+   */
+  static isInvalidGrantError(err: unknown): boolean {
+    if (!(err instanceof Error)) return false;
+    const msg = err.message.toLowerCase();
+    if (msg.includes('invalid_grant')) return true;
+    // google-auth-library sometimes wraps it in a GaxiosError response body
+    const body = (err as { response?: { data?: { error?: string } } }).response?.data?.error;
+    return body === 'invalid_grant';
+  }
+
+  /**
+   * Deletes the stored tokens file so isAuthenticated() returns false and
+   * subsequent scheduler checks stop attempting scans.
+   */
+  private clearTokens(): void {
+    try {
+      if (fs.existsSync(TOKENS_PATH)) {
+        fs.unlinkSync(TOKENS_PATH);
+        logger.warn('[gmail] Stale tokens removed — re-authentication required at /auth/google');
+      }
+    } catch {
+      // best-effort
+    }
+  }
+
   private saveTokens(tokens: object): void {
     fs.mkdirSync(path.dirname(TOKENS_PATH), { recursive: true });
     fs.writeFileSync(TOKENS_PATH, JSON.stringify(tokens, null, 2));
@@ -132,67 +160,122 @@ export class GmailService {
    *
    * @param query  - Gmail search query (e.g. "after:2026/01/01")
    * @param pageToken - continuation token for pagination
+   * @param maxResults - max number of message IDs to fetch (1-500)
    */
   async listMessageIds(
     query: string,
-    pageToken?: string | null
+    pageToken?: string | null,
+    maxResults = 100
   ): Promise<ListMessagesPage> {
-    return withRetry(
-      async () => {
-        const response = await withTimeout(
-          () =>
-            this.gmail.users.messages.list({
-              userId: 'me',
-              q: query,
-              maxResults: 100,
-              pageToken: pageToken ?? undefined,
-            }),
-          15_000,
-          'gmail.messages.list'
-        );
+    try {
+      return await withRetry(
+        async () => {
+          const normalizedMaxResults = Math.max(1, Math.min(500, maxResults));
+          const response = await withTimeout(
+            () =>
+              this.gmail.users.messages.list({
+                userId: 'me',
+                q: query,
+                maxResults: normalizedMaxResults,
+                pageToken: pageToken ?? undefined,
+              }),
+            15_000,
+            'gmail.messages.list'
+          );
 
-        const data = response.data;
-        return {
-          messageIds: (data.messages ?? []).map((m) => m.id!).filter(Boolean),
-          nextPageToken: data.nextPageToken ?? null,
-          resultSizeEstimate: data.resultSizeEstimate ?? 0,
-        };
-      },
-      {
-        maxAttempts: 4,
-        initialDelayMs: 2_000,
-        shouldRetry: isTransientError,
-        context: 'gmail.listMessageIds',
+          const data = response.data;
+          return {
+            messageIds: (data.messages ?? []).map((m) => m.id!).filter(Boolean),
+            nextPageToken: data.nextPageToken ?? null,
+            resultSizeEstimate: data.resultSizeEstimate ?? 0,
+          };
+        },
+        {
+          maxAttempts: 4,
+          initialDelayMs: 2_000,
+          shouldRetry: isTransientError,
+          context: 'gmail.listMessageIds',
+        }
+      );
+    } catch (err) {
+      if (GmailService.isInvalidGrantError(err)) {
+        this.clearTokens();
+        throw new Error('Gmail authentication expired — re-authenticate at /auth/google');
       }
-    );
+      throw err;
+    }
+  }
+
+  /** Fetches lightweight metadata + snippet for stage-1 classification. */
+  async fetchMessageMetadata(messageId: string): Promise<ParsedEmail> {
+    try {
+      return await withRetry(
+        async () => {
+          const response = await withTimeout(
+            () =>
+              this.gmail.users.messages.get({
+                userId: 'me',
+                id: messageId,
+                format: 'metadata',
+                metadataHeaders: ['From', 'Subject', 'Date'],
+              }),
+            15_000,
+            `gmail.messages.get.metadata(${messageId})`
+          );
+
+          return this.parseMessage(response.data, false);
+        },
+        {
+          maxAttempts: 3,
+          initialDelayMs: 1_500,
+          shouldRetry: isTransientError,
+          context: 'gmail.fetchMessageMetadata',
+        }
+      );
+    } catch (err) {
+      if (GmailService.isInvalidGrantError(err)) {
+        this.clearTokens();
+        throw new Error('Gmail authentication expired — re-authenticate at /auth/google');
+      }
+      throw err;
+    }
   }
 
   /**
-   * Fetches and parses the full message detail for a given Gmail message ID.
+   * Fetches and parses full message payload for stage-2 deep classification
+   * and extraction.
    */
   async fetchMessage(messageId: string): Promise<ParsedEmail> {
-    return withRetry(
-      async () => {
-        const response = await withTimeout(
-          () =>
-            this.gmail.users.messages.get({
-              userId: 'me',
-              id: messageId,
-              format: 'full',
-            }),
-          15_000,
-          `gmail.messages.get(${messageId})`
-        );
+    try {
+      return await withRetry(
+        async () => {
+          const response = await withTimeout(
+            () =>
+              this.gmail.users.messages.get({
+                userId: 'me',
+                id: messageId,
+                format: 'full',
+              }),
+            15_000,
+            `gmail.messages.get.full(${messageId})`
+          );
 
-        return this.parseMessage(response.data);
-      },
-      {
-        maxAttempts: 3,
-        initialDelayMs: 1_500,
-        shouldRetry: isTransientError,
-        context: 'gmail.fetchMessage',
+          return this.parseMessage(response.data, true);
+        },
+        {
+          maxAttempts: 3,
+          initialDelayMs: 1_500,
+          shouldRetry: isTransientError,
+          context: 'gmail.fetchMessage',
+        }
+      );
+    } catch (err) {
+      if (GmailService.isInvalidGrantError(err)) {
+        this.clearTokens();
+        throw new Error('Gmail authentication expired — re-authenticate at /auth/google');
       }
-    );
+      throw err;
+    }
   }
 
   // ─── Batch Fetching ────────────────────────────────────────────────────────
@@ -237,7 +320,10 @@ export class GmailService {
 
   // ─── Message Parsing ───────────────────────────────────────────────────────
 
-  private parseMessage(msg: gmail_v1.Schema$Message): ParsedEmail {
+  private parseMessage(
+    msg: gmail_v1.Schema$Message,
+    includeBody: boolean
+  ): ParsedEmail {
     const headers = msg.payload?.headers ?? [];
     const getHeader = (name: string): string | null =>
       headers.find((h) => h.name?.toLowerCase() === name.toLowerCase())?.value ?? null;
@@ -247,7 +333,7 @@ export class GmailService {
     const dateRaw = getHeader('Date');
 
     // Parse "Name <email@domain.com>" or "email@domain.com"
-    const fromMatch = fromRaw.match(/^(.*?)\s*<([^>]+)>/) ;
+    const fromMatch = fromRaw.match(/^(.*?)\s*<([^>]+)>/);
     const fromName = fromMatch ? fromMatch[1].replace(/"/g, '').trim() : null;
     const fromAddress = fromMatch ? fromMatch[2].trim() : fromRaw.trim() || null;
 
@@ -260,7 +346,7 @@ export class GmailService {
       if (!isNaN(d.getTime())) receivedAt = d.toISOString();
     }
 
-    const bodyText = this.extractBodyText(msg.payload ?? {});
+    const bodyText = includeBody ? this.extractBodyText(msg.payload ?? {}) : null;
 
     return {
       gmailMessageId: msg.id!,
@@ -285,46 +371,44 @@ export class GmailService {
   }
 
   /**
-   * Recursively walks the Gmail MIME tree to extract plain text body.
-   * Prefers text/plain; falls back to text/html stripped of tags.
+   * Recursively walks the Gmail MIME tree and extracts both text/plain and
+   * text/html (stripped) when available, then merges them.
    */
   private extractBodyText(
     payload: gmail_v1.Schema$MessagePart,
     depth = 0
   ): string | null {
-    if (depth > 10) return null; // safety guard
+    const parts = this.extractBodyParts(payload, depth);
+    const merged = [parts.plain, parts.html].filter(Boolean).join('\n\n').trim();
+    return merged || null;
+  }
 
-    // Direct body
+  private extractBodyParts(
+    payload: gmail_v1.Schema$MessagePart,
+    depth = 0
+  ): { plain: string | null; html: string | null } {
+    if (depth > 10) return { plain: null, html: null }; // safety guard
+
+    let plain: string | null = null;
+    let html: string | null = null;
+
     if (payload.body?.data) {
       const text = Buffer.from(payload.body.data, 'base64url').toString('utf8');
-      if (payload.mimeType === 'text/plain') return text;
-      if (payload.mimeType === 'text/html') return this.stripHtml(text);
-    }
-
-    if (!payload.parts) return null;
-
-    // Prefer text/plain part over text/html
-    const plainPart = payload.parts.find((p) => p.mimeType === 'text/plain');
-    if (plainPart) {
-      const result = this.extractBodyText(plainPart, depth + 1);
-      if (result) return result;
-    }
-
-    const htmlPart = payload.parts.find((p) => p.mimeType === 'text/html');
-    if (htmlPart) {
-      const result = this.extractBodyText(htmlPart, depth + 1);
-      if (result) return result;
-    }
-
-    // Recurse into nested multipart
-    for (const part of payload.parts) {
-      if (part.mimeType?.startsWith('multipart/')) {
-        const result = this.extractBodyText(part, depth + 1);
-        if (result) return result;
+      if (payload.mimeType === 'text/plain') {
+        plain = text;
+      } else if (payload.mimeType === 'text/html') {
+        html = this.stripHtml(text);
       }
     }
 
-    return null;
+    for (const part of payload.parts ?? []) {
+      const child = this.extractBodyParts(part, depth + 1);
+      if (!plain && child.plain) plain = child.plain;
+      if (!html && child.html) html = child.html;
+      if (plain && html) break;
+    }
+
+    return { plain, html };
   }
 
   private stripHtml(html: string): string {
