@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --port 3000",
     "build": "next build",
-    "start": "HOSTNAME=0.0.0.0 node .next/standalone/server.js",
+    "start": "HOSTNAME=0.0.0.0 node .next/standalone/frontend/server.js",
     "lint": "next lint"
   },
   "dependencies": {
