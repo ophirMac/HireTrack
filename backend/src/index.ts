@@ -9,6 +9,7 @@ import companiesRouter from './routes/companies';
 import scanRouter from './routes/scan';
 import leadsRouter from './routes/leads';
 import { errorHandler, notFoundHandler } from './middleware/error';
+import { openAIService } from './services/openai.service';
 
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
 const FRONTEND_ORIGIN = process.env.FRONTEND_ORIGIN ?? 'http://localhost:3000';
@@ -48,6 +49,10 @@ app.use(errorHandler);
 // ─── Boot ──────────────────────────────────────────────────────────────────────
 
 function main(): void {
+  if (!openAIService.isConfigured()) {
+    logger.warn('OPENAI_API_KEY is not set — scan jobs are disabled until configured');
+  }
+
   // Initialize database (creates schema if missing)
   getDb();
 

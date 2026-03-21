@@ -20,9 +20,16 @@ import cron from 'node-cron';
 import { getSyncState } from '../db';
 import { scannerService } from '../services/scanner.service';
 import { gmailService } from '../services/gmail.service';
+import { openAIService } from '../services/openai.service';
 import { logger } from '../utils/logger';
 
 export function startScheduler(): void {
+  if (!openAIService.isConfigured()) {
+    logger.warn('[scheduler] OpenAI not configured — skipping all scan jobs');
+    logger.warn('[scheduler] Set OPENAI_API_KEY to enable classification/extraction');
+    return;
+  }
+
   // ── Startup scan ────────────────────────────────────────────────────────
   // Defer slightly to let the HTTP server finish booting
   setTimeout(async () => {

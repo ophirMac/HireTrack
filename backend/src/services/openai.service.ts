@@ -38,13 +38,22 @@ const ALLOWED_STATUSES: ApplicationStatus[] = [
 ];
 
 export class OpenAIService {
-  private client: OpenAI;
+  private client: OpenAI | null;
 
   constructor() {
-    if (!process.env.OPENAI_API_KEY) {
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    this.client = apiKey ? new OpenAI({ apiKey }) : null;
+  }
+
+  isConfigured(): boolean {
+    return this.client !== null;
+  }
+
+  private getClient(): OpenAI {
+    if (!this.client) {
       throw new Error('OPENAI_API_KEY is not set');
     }
-    this.client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    return this.client;
   }
 
   // ─── Classification ────────────────────────────────────────────────────────
@@ -120,11 +129,13 @@ No explanation.`;
     prompt: string,
     context: string
   ): Promise<ClassificationResult> {
+    const client = this.getClient();
+
     return withRetry(
       async () => {
         const response = await withTimeout(
           () =>
-            this.client.chat.completions.create({
+            client.chat.completions.create({
               model: 'gpt-4o-mini',
               messages: [{ role: 'user', content: prompt }],
               response_format: { type: 'json_object' },
@@ -177,6 +188,8 @@ No explanation.`;
     snippet: string | null;
     bodyText: string | null;
   }): Promise<ExtractionResult> {
+    const client = this.getClient();
+
     // Truncate body to ~2000 chars to stay within token budget cost-effectively
     const bodyPreview = (params.bodyText ?? params.snippet ?? '').slice(0, 2_000);
 
@@ -213,7 +226,7 @@ Return JSON only. No explanation.`;
       async () => {
         const response = await withTimeout(
           () =>
-            this.client.chat.completions.create({
+            client.chat.completions.create({
               model: 'gpt-4o-mini',
               messages: [{ role: 'user', content: prompt }],
               response_format: { type: 'json_object' },

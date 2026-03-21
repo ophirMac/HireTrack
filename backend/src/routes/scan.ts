@@ -6,6 +6,7 @@ import {
 } from '../db';
 import { scannerService } from '../services/scanner.service';
 import { gmailService } from '../services/gmail.service';
+import { openAIService } from '../services/openai.service';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -40,6 +41,13 @@ router.get('/status', (_req: Request, res: Response) => {
 
 // POST /api/scan/trigger — manually trigger an incremental scan
 router.post('/trigger', async (_req: Request, res: Response) => {
+  if (!openAIService.isConfigured()) {
+    res.status(503).json({
+      error: 'OpenAI is not configured. Set OPENAI_API_KEY to enable scanning.',
+    });
+    return;
+  }
+
   if (scannerService.isCurrentlyRunning()) {
     res.status(409).json({ error: 'Scan already in progress' });
     return;

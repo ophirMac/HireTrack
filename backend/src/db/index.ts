@@ -89,9 +89,26 @@ export interface SyncState {
 
 const DATA_DIR = path.join(__dirname, '../../data');
 const DB_PATH = path.join(DATA_DIR, 'hiretrack.db');
-const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
+const SCHEMA_PATH_CANDIDATES = [
+  path.join(__dirname, 'schema.sql'),
+  path.join(__dirname, '../../src/db/schema.sql'),
+  path.join(process.cwd(), 'dist/db/schema.sql'),
+  path.join(process.cwd(), 'src/db/schema.sql'),
+];
 
 let _db: DatabaseSync | null = null;
+
+function resolveSchemaPath(): string {
+  for (const candidate of SCHEMA_PATH_CANDIDATES) {
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  throw new Error(
+    `Database schema.sql not found. Checked: ${SCHEMA_PATH_CANDIDATES.join(', ')}`
+  );
+}
 
 export function getDb(): DatabaseSync {
   if (!_db) {
@@ -102,7 +119,8 @@ export function getDb(): DatabaseSync {
     _db.exec('PRAGMA foreign_keys = ON');
 
     // node:sqlite's exec() handles multi-statement SQL natively
-    const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
+    const schemaPath = resolveSchemaPath();
+    const schema = fs.readFileSync(schemaPath, 'utf8');
     _db.exec(schema);
     ensureCompanyColumns(_db);
     ensureEmailColumns(_db);
