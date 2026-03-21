@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --port 3000",
-    "build": "next build",
+    "build": "next build && cp -r .next/static .next/standalone/frontend/.next/static",
     "start": "HOSTNAME=0.0.0.0 node .next/standalone/frontend/server.js",
     "lint": "next lint"
   },
