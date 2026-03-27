@@ -6,45 +6,28 @@ interface Props {
   interactions: JobInteraction[];
 }
 
-export default function Timeline({ interactions }: Props) {
-  if (interactions.length === 0) {
-    return (
-      <div className="text-center py-12 text-zinc-500 text-sm">
-        No interactions recorded yet.
-      </div>
-    );
-  }
-
+function RoleTimeline({ items }: { items: JobInteraction[] }) {
   return (
     <div className="relative">
-      {/* Vertical line */}
       <div className="absolute left-[15px] top-0 bottom-0 w-px bg-surface-border" />
-
       <div className="space-y-6">
-        {interactions.map((interaction, idx) => {
+        {items.map((interaction) => {
           const date = interaction.received_at
             ? new Date(interaction.received_at)
             : new Date(interaction.created_at);
 
           return (
             <div key={interaction.id} className="flex gap-4 relative">
-              {/* Timeline dot */}
               <div className="relative z-10 mt-1 w-8 h-8 shrink-0 flex items-center justify-center">
                 <div className="w-2 h-2 rounded-full bg-brand" />
               </div>
 
-              {/* Card */}
               <div className="flex-1 card p-4 mb-1">
                 <div className="flex items-start justify-between gap-3 mb-2">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-zinc-100 truncate">
                       {interaction.subject ?? '(no subject)'}
                     </p>
-                    {interaction.role && (
-                      <p className="text-xs text-zinc-500 mt-0.5">
-                        Role: <span className="text-zinc-400">{interaction.role}</span>
-                      </p>
-                    )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <StatusBadge status={interaction.status} size="sm" />
@@ -79,6 +62,61 @@ export default function Timeline({ interactions }: Props) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+export default function Timeline({ interactions }: Props) {
+  if (interactions.length === 0) {
+    return (
+      <div className="text-center py-12 text-zinc-500 text-sm">
+        No interactions recorded yet.
+      </div>
+    );
+  }
+
+  // Group by role, preserving insertion order (null role last)
+  const roleMap = new Map<string, JobInteraction[]>();
+  for (const interaction of interactions) {
+    const key = interaction.role ?? '__no_role__';
+    if (!roleMap.has(key)) roleMap.set(key, []);
+    roleMap.get(key)!.push(interaction);
+  }
+
+  const groups = Array.from(roleMap.entries());
+  const hasMultipleRoles = groups.length > 1 || (groups.length === 1 && groups[0][0] !== '__no_role__');
+
+  // Single role with a name — show header once; no role — flat list
+  if (groups.length === 1) {
+    const [key, items] = groups[0];
+    return (
+      <div>
+        {key !== '__no_role__' && (
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-xs font-semibold text-brand uppercase tracking-wider">{key}</span>
+          </div>
+        )}
+        <RoleTimeline items={items} />
+      </div>
+    );
+  }
+
+  // Multiple roles — show each as a labeled section
+  return (
+    <div className="space-y-8">
+      {groups.map(([key, items]) => (
+        <div key={key}>
+          <div className="flex items-center gap-3 mb-4">
+            <span className="text-xs font-semibold text-brand uppercase tracking-wider">
+              {key === '__no_role__' ? 'Other' : key}
+            </span>
+            <span className="text-xs text-zinc-600">
+              {items.length} {items.length === 1 ? 'signal' : 'signals'}
+            </span>
+          </div>
+          <RoleTimeline items={items} />
+        </div>
+      ))}
     </div>
   );
 }

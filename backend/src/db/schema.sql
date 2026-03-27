@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS leads (
   id                    INTEGER PRIMARY KEY AUTOINCREMENT,
   company_name          TEXT    NOT NULL,
   role                  TEXT,
+  job_url               TEXT,
   contact_person        TEXT,
   contact_source        TEXT,                        -- linkedin/email/referral/event/other
   date_first_contacted  TEXT,                        -- ISO date string
@@ -139,6 +140,26 @@ CREATE TABLE IF NOT EXISTS lead_moves (
 
 CREATE INDEX IF NOT EXISTS idx_lead_moves_lead_id ON lead_moves(lead_id);
 CREATE INDEX IF NOT EXISTS idx_lead_moves_date    ON lead_moves(date DESC);
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- lead_contacts
+-- People to reach out to for a specific lead opportunity.
+-- Each contact tracks their own "reaching phase" in the outreach process.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS lead_contacts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  lead_id     INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+  name        TEXT    NOT NULL,
+  role        TEXT,
+  linkedin_url TEXT,
+  status      TEXT    NOT NULL DEFAULT 'identified',  -- identified/connected/messaged/replied/referred
+  notes       TEXT,
+  created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+  updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_lead_contacts_lead_id ON lead_contacts(lead_id);
+CREATE INDEX IF NOT EXISTS idx_lead_contacts_status  ON lead_contacts(status);
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- sync_state

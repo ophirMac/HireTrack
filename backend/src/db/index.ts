@@ -124,6 +124,8 @@ export function getDb(): DatabaseSync {
     _db.exec(schema);
     ensureCompanyColumns(_db);
     ensureEmailColumns(_db);
+    ensureLeadColumns(_db);
+    ensureCompanyContactsTable(_db);
     ensureCanonicalStatuses(_db);
 
     logger.info('Database initialized', { path: DB_PATH });
@@ -158,6 +160,30 @@ function ensureEmailColumns(db: DatabaseSync): void {
   if (!has('full_body_fetched')) {
     db.exec(`ALTER TABLE emails ADD COLUMN full_body_fetched INTEGER NOT NULL DEFAULT 0`);
   }
+}
+
+function ensureLeadColumns(db: DatabaseSync): void {
+  const cols = db.prepare(`PRAGMA table_info(leads)`).all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === 'job_url')) {
+    db.exec(`ALTER TABLE leads ADD COLUMN job_url TEXT`);
+  }
+}
+
+function ensureCompanyContactsTable(db: DatabaseSync): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS company_contacts (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      company_id   INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      name         TEXT    NOT NULL,
+      role         TEXT,
+      linkedin_url TEXT,
+      notes        TEXT,
+      created_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now')),
+      updated_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_company_contacts_company_id
+      ON company_contacts(company_id);
+  `);
 }
 
 function ensureCanonicalStatuses(db: DatabaseSync): void {
@@ -659,6 +685,7 @@ export interface Lead {
   id: number;
   company_name: string;
   role: string | null;
+  job_url: string | null;
   contact_person: string | null;
   contact_source: string | null;
   date_first_contacted: string | null;
@@ -681,6 +708,18 @@ export interface LeadMove {
   person_contacted: string | null;
   link: string | null;
   created_at: string;
+}
+
+export interface LeadContact {
+  id: number;
+  lead_id: number;
+  name: string;
+  role: string | null;
+  linkedin_url: string | null;
+  status: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export function listLeads(status?: string): LeadWithMoveCount[] {
@@ -717,9 +756,17 @@ export function getLeadById(id: number): Lead | undefined {
   return r ? row<Lead>(r) : undefined;
 }
 
+export function getLeadByConvertedCompanyId(companyId: number): Lead | undefined {
+  const r = getDb()
+    .prepare(`SELECT * FROM leads WHERE converted_company_id = ? LIMIT 1`)
+    .get(companyId);
+  return r ? row<Lead>(r) : undefined;
+}
+
 export function createLead(data: {
   company_name: string;
   role?: string | null;
+  job_url?: string | null;
   contact_person?: string | null;
   contact_source?: string | null;
   date_first_contacted?: string | null;
@@ -728,13 +775,14 @@ export function createLead(data: {
 }): Lead {
   const result = getDb()
     .prepare(
-      `INSERT INTO leads (company_name, role, contact_person, contact_source, date_first_contacted, status, notes)
-       VALUES (@company_name, @role, @contact_person, @contact_source, @date_first_contacted, @status, @notes)
+      `INSERT INTO leads (company_name, role, job_url, contact_person, contact_source, date_first_contacted, status, notes)
+       VALUES (@company_name, @role, @job_url, @contact_person, @contact_source, @date_first_contacted, @status, @notes)
        RETURNING *`
     )
     .get({
       company_name: data.company_name,
       role: data.role ?? null,
+      job_url: data.job_url ?? null,
       contact_person: data.contact_person ?? null,
       contact_source: data.contact_source ?? null,
       date_first_contacted: data.date_first_contacted ?? null,
@@ -746,7 +794,7 @@ export function createLead(data: {
 
 export function updateLead(
   id: number,
-  data: Partial<Pick<Lead, 'company_name' | 'role' | 'contact_person' | 'contact_source' | 'date_first_contacted' | 'status' | 'notes'>>
+  data: Partial<Pick<Lead, 'company_name' | 'role' | 'job_url' | 'contact_person' | 'contact_source' | 'date_first_contacted' | 'status' | 'notes'>>
 ): Lead | undefined {
   const fields: string[] = [`updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`];
   const params: Record<string, unknown> = { id };
@@ -817,5 +865,146 @@ export function createLeadMove(data: {
 
 export function deleteLeadMove(id: number): boolean {
   const result = getDb().prepare(`DELETE FROM lead_moves WHERE id = ?`).run(id);
+  return (result as { changes: number }).changes > 0;
+}
+
+// ─── Lead Contacts ────────────────────────────────────────────────────────────
+
+export function listLeadContacts(leadId: number): LeadContact[] {
+  return rows<LeadContact>(
+    getDb()
+      .prepare(`SELECT * FROM lead_contacts WHERE lead_id = ? ORDER BY created_at ASC`)
+      .all(leadId)
+  );
+}
+
+export function getLeadContactById(id: number): LeadContact | undefined {
+  const r = getDb().prepare(`SELECT * FROM lead_contacts WHERE id = ?`).get(id);
+  return r ? row<LeadContact>(r) : undefined;
+}
+
+export function createLeadContact(data: {
+  lead_id: number;
+  name: string;
+  role?: string | null;
+  linkedin_url?: string | null;
+  status?: string;
+  notes?: string | null;
+}): LeadContact {
+  const result = getDb()
+    .prepare(
+      `INSERT INTO lead_contacts (lead_id, name, role, linkedin_url, status, notes)
+       VALUES (@lead_id, @name, @role, @linkedin_url, @status, @notes)
+       RETURNING *`
+    )
+    .get({
+      lead_id: data.lead_id,
+      name: data.name,
+      role: data.role ?? null,
+      linkedin_url: data.linkedin_url ?? null,
+      status: data.status ?? 'identified',
+      notes: data.notes ?? null,
+    });
+  return row<LeadContact>(result);
+}
+
+export function updateLeadContact(
+  id: number,
+  data: Partial<Pick<LeadContact, 'name' | 'role' | 'linkedin_url' | 'status' | 'notes'>>
+): LeadContact | undefined {
+  const fields: string[] = [`updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`];
+  const params: Record<string, unknown> = { id };
+
+  for (const [key, value] of Object.entries(data)) {
+    fields.push(`${key} = @${key}`);
+    params[key] = value;
+  }
+
+  if (fields.length === 1) return getLeadContactById(id);
+
+  getDb()
+    .prepare(`UPDATE lead_contacts SET ${fields.join(', ')} WHERE id = @id`)
+    .run(params);
+
+  return getLeadContactById(id);
+}
+
+export function deleteLeadContact(id: number): boolean {
+  const result = getDb().prepare(`DELETE FROM lead_contacts WHERE id = ?`).run(id);
+  return (result as { changes: number }).changes > 0;
+}
+
+// ─── Company Contacts ─────────────────────────────────────────────────────────
+
+export interface CompanyContact {
+  id: number;
+  company_id: number;
+  name: string;
+  role: string | null;
+  linkedin_url: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function listCompanyContacts(companyId: number): CompanyContact[] {
+  return rows<CompanyContact>(
+    getDb()
+      .prepare(`SELECT * FROM company_contacts WHERE company_id = ? ORDER BY created_at ASC`)
+      .all(companyId)
+  );
+}
+
+export function getCompanyContactById(id: number): CompanyContact | undefined {
+  const r = getDb().prepare(`SELECT * FROM company_contacts WHERE id = ?`).get(id);
+  return r ? row<CompanyContact>(r) : undefined;
+}
+
+export function createCompanyContact(data: {
+  company_id: number;
+  name: string;
+  role?: string | null;
+  linkedin_url?: string | null;
+  notes?: string | null;
+}): CompanyContact {
+  const result = getDb()
+    .prepare(
+      `INSERT INTO company_contacts (company_id, name, role, linkedin_url, notes)
+       VALUES (@company_id, @name, @role, @linkedin_url, @notes)
+       RETURNING *`
+    )
+    .get({
+      company_id: data.company_id,
+      name: data.name,
+      role: data.role ?? null,
+      linkedin_url: data.linkedin_url ?? null,
+      notes: data.notes ?? null,
+    });
+  return row<CompanyContact>(result);
+}
+
+export function updateCompanyContact(
+  id: number,
+  data: Partial<Pick<CompanyContact, 'name' | 'role' | 'linkedin_url' | 'notes'>>
+): CompanyContact | undefined {
+  const fields: string[] = [`updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`];
+  const params: Record<string, unknown> = { id };
+
+  for (const [key, value] of Object.entries(data)) {
+    fields.push(`${key} = @${key}`);
+    params[key] = value;
+  }
+
+  if (fields.length === 1) return getCompanyContactById(id);
+
+  getDb()
+    .prepare(`UPDATE company_contacts SET ${fields.join(', ')} WHERE id = @id`)
+    .run(params);
+
+  return getCompanyContactById(id);
+}
+
+export function deleteCompanyContact(id: number): boolean {
+  const result = getDb().prepare(`DELETE FROM company_contacts WHERE id = ?`).run(id);
   return (result as { changes: number }).changes > 0;
 }

@@ -13,11 +13,15 @@ import {
   createLeadMove,
   deleteLeadMove,
   convertLead,
+  createLeadContact,
+  updateLeadContact,
+  deleteLeadContact,
 } from '../../../lib/api';
-import type { Lead, LeadStatus, LeadSource } from '../../../lib/types';
+import type { Lead, LeadStatus, LeadSource, ContactStatus } from '../../../lib/types';
 import LeadStatusBadge from '../../../components/LeadStatusBadge';
 import LeadForm from '../../../components/LeadForm';
 import LeadMoveTimeline from '../../../components/LeadMoveTimeline';
+import ContactsPanel from '../../../components/ContactsPanel';
 
 const STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
   { value: 'researching',        label: 'Researching' },
@@ -106,6 +110,21 @@ export default function LeadDetailPage() {
     await mutate();
   }
 
+  async function handleAddContact(contactData: { name: string; role?: string; linkedin_url?: string; notes?: string }) {
+    await createLeadContact(id, contactData);
+    await mutate();
+  }
+
+  async function handleUpdateContactStatus(contactId: number, status: ContactStatus) {
+    await updateLeadContact(id, contactId, { status });
+    await mutate();
+  }
+
+  async function handleDeleteContact(contactId: number) {
+    await deleteLeadContact(id, contactId);
+    await mutate();
+  }
+
   if (isNaN(id)) {
     return <div className="p-6 text-red-400 text-sm">Invalid lead ID.</div>;
   }
@@ -131,7 +150,7 @@ export default function LeadDetailPage() {
     );
   }
 
-  const { lead, moves } = data;
+  const { lead, moves, contacts } = data;
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
@@ -258,6 +277,24 @@ export default function LeadDetailPage() {
           </div>
         )}
 
+        {/* Job URL */}
+        {!editing && lead.job_url && (
+          <div className="border-t border-surface-border pt-4">
+            <p className="text-xs text-zinc-500 mb-1">Job Listing</p>
+            <a
+              href={lead.job_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-brand hover:text-brand-hover transition-colors inline-flex items-center gap-1.5"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+              </svg>
+              View Job Listing →
+            </a>
+          </div>
+        )}
+
         {/* Notes */}
         {!editing && lead.notes && (
           <div className="border-t border-surface-border pt-4">
@@ -265,6 +302,16 @@ export default function LeadDetailPage() {
             <p className="text-sm text-zinc-300 whitespace-pre-wrap">{lead.notes}</p>
           </div>
         )}
+      </div>
+
+      {/* Contacts */}
+      <div className="card p-5">
+        <ContactsPanel
+          contacts={contacts ?? []}
+          onAdd={handleAddContact}
+          onUpdateStatus={handleUpdateContactStatus}
+          onDelete={handleDeleteContact}
+        />
       </div>
 
       {/* Move Timeline */}

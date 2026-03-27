@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import axios from 'axios';
 import {
   listLeads,
   getLeadById,
@@ -11,7 +12,13 @@ import {
   deleteLeadMove,
   findCompanyByName,
   createCompany,
+  listLeadContacts,
+  createLeadContact,
+  updateLeadContact,
+  deleteLeadContact,
 } from '../db';
+import { logger } from '../utils/logger';
+import { openAIService } from '../services/openai.service';
 
 const router = Router();
 
@@ -33,7 +40,80 @@ router.get('/', (req: Request, res: Response) => {
   res.json({ leads });
 });
 
-// GET /api/leads/:id — lead detail + moves
+// ─── URL Extraction (must be before /:id to avoid param capture) ──────────────
+
+const CONTACT_STATUSES = ['identified', 'connected', 'messaged', 'replied', 'referred'] as const;
+
+// POST /api/leads/extract-url — extract company name & role from a job URL using AI
+router.post('/extract-url', async (req: Request, res: Response) => {
+  const { url } = req.body ?? {};
+
+  if (!url || typeof url !== 'string') {
+    res.status(400).json({ error: 'url is required' });
+    return;
+  }
+
+  try {
+    new URL(url);
+  } catch {
+    res.status(400).json({ error: 'Invalid URL format' });
+    return;
+  }
+
+  let html = '';
+  try {
+    const response = await axios.get(url, {
+      timeout: 10000,
+      maxRedirects: 5,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml',
+      },
+      responseType: 'text',
+    });
+    html = typeof response.data === 'string' ? response.data : '';
+  } catch (err) {
+    logger.warn('Failed to fetch URL', { url, error: err instanceof Error ? err.message : err });
+  }
+
+  // If OpenAI is configured and we got HTML, use AI extraction
+  if (openAIService.isConfigured() && html) {
+    try {
+      const result = await openAIService.extractFromJobPage(html, url);
+      res.json({
+        company_name: result.companyName,
+        role: result.role,
+      });
+      return;
+    } catch (err) {
+      logger.warn('AI extraction failed, falling back to domain', { url, error: err instanceof Error ? err.message : err });
+    }
+  }
+
+  // Fallback: extract company name from domain
+  let companyName = '';
+  try {
+    const parsedUrl = new URL(url);
+    companyName = parsedUrl.hostname
+      .replace(/^www\./, '')
+      .replace(/\.(com|org|net|io|co|jobs).*$/, '')
+      .split('.')
+      .pop() ?? '';
+    companyName = companyName.charAt(0).toUpperCase() + companyName.slice(1);
+  } catch {
+    // ignore
+  }
+
+  res.json({
+    company_name: companyName,
+    role: '',
+    warning: html
+      ? 'AI extraction not available. Company name guessed from URL domain.'
+      : 'Could not fetch page. Company name guessed from URL domain.',
+  });
+});
+
+// GET /api/leads/:id — lead detail + moves + contacts
 router.get('/:id', (req: Request, res: Response) => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) {
@@ -48,12 +128,13 @@ router.get('/:id', (req: Request, res: Response) => {
   }
 
   const moves = listLeadMoves(id);
-  res.json({ lead, moves });
+  const contacts = listLeadContacts(id);
+  res.json({ lead, moves, contacts });
 });
 
 // POST /api/leads — create a new lead
 router.post('/', (req: Request, res: Response) => {
-  const { company_name, role, contact_person, contact_source, date_first_contacted, notes, status } =
+  const { company_name, role, job_url, contact_person, contact_source, date_first_contacted, notes, status } =
     req.body ?? {};
 
   if (!company_name || typeof company_name !== 'string' || !company_name.trim()) {
@@ -78,6 +159,7 @@ router.post('/', (req: Request, res: Response) => {
   const lead = createLead({
     company_name: company_name.trim(),
     role: role ?? null,
+    job_url: job_url ?? null,
     contact_person: contact_person ?? null,
     contact_source: contact_source ?? null,
     date_first_contacted: date_first_contacted ?? null,
@@ -102,7 +184,7 @@ router.patch('/:id', (req: Request, res: Response) => {
     return;
   }
 
-  const { company_name, role, contact_person, contact_source, date_first_contacted, notes, status } =
+  const { company_name, role, job_url, contact_person, contact_source, date_first_contacted, notes, status } =
     req.body ?? {};
 
   if (status !== undefined && !ALLOWED_STATUSES.includes(status)) {
@@ -122,6 +204,7 @@ router.patch('/:id', (req: Request, res: Response) => {
   const updated = updateLead(id, {
     ...(company_name !== undefined && { company_name }),
     ...(role !== undefined && { role }),
+    ...(job_url !== undefined && { job_url }),
     ...(contact_person !== undefined && { contact_person }),
     ...(contact_source !== undefined && { contact_source }),
     ...(date_first_contacted !== undefined && { date_first_contacted }),
@@ -253,6 +336,112 @@ router.post('/:id/convert', (req: Request, res: Response) => {
 
   const updatedLead = getLeadById(id);
   res.json({ lead: updatedLead, company });
+});
+
+// ─── Lead Contacts ────────────────────────────────────────────────────────────
+
+// GET /api/leads/:id/contacts — list contacts for a lead
+router.get('/:id/contacts', (req: Request, res: Response) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    res.status(400).json({ error: 'Invalid lead id' });
+    return;
+  }
+
+  const lead = getLeadById(id);
+  if (!lead) {
+    res.status(404).json({ error: 'Lead not found' });
+    return;
+  }
+
+  const contacts = listLeadContacts(id);
+  res.json({ contacts });
+});
+
+// POST /api/leads/:id/contacts — add a contact to a lead
+router.post('/:id/contacts', (req: Request, res: Response) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) {
+    res.status(400).json({ error: 'Invalid lead id' });
+    return;
+  }
+
+  const lead = getLeadById(id);
+  if (!lead) {
+    res.status(404).json({ error: 'Lead not found' });
+    return;
+  }
+
+  const { name, role, linkedin_url, status, notes } = req.body ?? {};
+
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    res.status(400).json({ error: 'name is required' });
+    return;
+  }
+
+  if (status !== undefined && !CONTACT_STATUSES.includes(status)) {
+    res.status(400).json({ error: 'Invalid contact status. Allowed: ' + CONTACT_STATUSES.join(', ') });
+    return;
+  }
+
+  const contact = createLeadContact({
+    lead_id: id,
+    name: name.trim(),
+    role: role ?? null,
+    linkedin_url: linkedin_url ?? null,
+    status: status ?? 'identified',
+    notes: notes ?? null,
+  });
+
+  res.status(201).json({ contact });
+});
+
+// PATCH /api/leads/:id/contacts/:contactId — update a contact
+router.patch('/:id/contacts/:contactId', (req: Request, res: Response) => {
+  const contactId = parseInt(req.params.contactId, 10);
+  if (isNaN(contactId)) {
+    res.status(400).json({ error: 'Invalid contact id' });
+    return;
+  }
+
+  const { name, role, linkedin_url, status, notes } = req.body ?? {};
+
+  if (status !== undefined && !CONTACT_STATUSES.includes(status)) {
+    res.status(400).json({ error: 'Invalid contact status. Allowed: ' + CONTACT_STATUSES.join(', ') });
+    return;
+  }
+
+  const updated = updateLeadContact(contactId, {
+    ...(name !== undefined && { name }),
+    ...(role !== undefined && { role }),
+    ...(linkedin_url !== undefined && { linkedin_url }),
+    ...(status !== undefined && { status }),
+    ...(notes !== undefined && { notes }),
+  });
+
+  if (!updated) {
+    res.status(404).json({ error: 'Contact not found' });
+    return;
+  }
+
+  res.json({ contact: updated });
+});
+
+// DELETE /api/leads/:id/contacts/:contactId — remove a contact
+router.delete('/:id/contacts/:contactId', (req: Request, res: Response) => {
+  const contactId = parseInt(req.params.contactId, 10);
+  if (isNaN(contactId)) {
+    res.status(400).json({ error: 'Invalid contact id' });
+    return;
+  }
+
+  const deleted = deleteLeadContact(contactId);
+  if (!deleted) {
+    res.status(404).json({ error: 'Contact not found' });
+    return;
+  }
+
+  res.json({ success: true });
 });
 
 export default router;
