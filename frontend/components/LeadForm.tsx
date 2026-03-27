@@ -29,6 +29,7 @@ interface Props {
 export default function LeadForm({ initial = {}, onSubmit, onCancel, submitLabel = 'Save' }: Props) {
   const [company_name, setCompanyName]   = useState(initial.company_name ?? '');
   const [role, setRole]                   = useState(initial.role ?? '');
+  const [job_url, setJobUrl]              = useState(initial.job_url ?? '');
   const [contact_person, setContact]      = useState(initial.contact_person ?? '');
   const [contact_source, setSource]       = useState<LeadSource | ''>(initial.contact_source ?? '');
   const [date_first_contacted, setDate]   = useState(initial.date_first_contacted?.slice(0, 10) ?? '');
@@ -46,6 +47,7 @@ export default function LeadForm({ initial = {}, onSubmit, onCancel, submitLabel
       await onSubmit({
         company_name: company_name.trim(),
         role: role.trim() || null,
+        job_url: job_url.trim() || null,
         contact_person: contact_person.trim() || null,
         contact_source: (contact_source as LeadSource) || null,
         date_first_contacted: date_first_contacted || null,
@@ -91,6 +93,17 @@ export default function LeadForm({ initial = {}, onSubmit, onCancel, submitLabel
             value={role}
             onChange={(e) => setRole(e.target.value)}
             placeholder="Software Engineer"
+            className={inputClass}
+          />
+        </div>
+
+        <div className="sm:col-span-2">
+          <label className={labelClass}>Job Listing URL</label>
+          <input
+            type="url"
+            value={job_url}
+            onChange={(e) => setJobUrl(e.target.value)}
+            placeholder="https://linkedin.com/jobs/view/..."
             className={inputClass}
           />
         </div>

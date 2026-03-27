@@ -37,6 +37,18 @@ const ALLOWED_STATUSES: ApplicationStatus[] = [
   'rejected',
 ];
 
+export interface JobPageExtractionResult {
+  companyName: string;
+  role: string;
+}
+
+export interface LinkedInProfileExtractionResult {
+  name: string;
+  role: string;
+  bio: string;
+  warning?: string;
+}
+
 export class OpenAIService {
   private client: OpenAI | null;
 
@@ -249,6 +261,100 @@ Return JSON only. No explanation.`;
     );
   }
 
+  // ─── Job Page Extraction ─────────────────────────────────────────────────
+
+  /**
+   * Uses AI to extract company name and job role from a job listing page's HTML content.
+   */
+  async extractFromJobPage(html: string, url: string): Promise<JobPageExtractionResult> {
+    const client = this.getClient();
+
+    // Extract useful text: title, meta tags, and first chunk of visible text
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = titleMatch ? titleMatch[1].replace(/\s+/g, ' ').trim() : '';
+
+    // Extract meta tags (og:title, og:site_name, description, etc.)
+    const metaTags: string[] = [];
+    const metaRegex = /<meta\s+[^>]*(?:property|name)\s*=\s*["']([^"']+)["'][^>]*content\s*=\s*["']([^"']+)["'][^>]*/gi;
+    const metaRegex2 = /<meta\s+[^>]*content\s*=\s*["']([^"']+)["'][^>]*(?:property|name)\s*=\s*["']([^"']+)["'][^>]*/gi;
+    let m;
+    while ((m = metaRegex.exec(html)) !== null) {
+      metaTags.push(`${m[1]}: ${m[2]}`);
+    }
+    while ((m = metaRegex2.exec(html)) !== null) {
+      metaTags.push(`${m[2]}: ${m[1]}`);
+    }
+
+    // Strip HTML tags to get visible text, take first ~3000 chars
+    const textContent = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&[a-z]+;/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 3000);
+
+    const prompt = `You are extracting job listing info from a webpage.
+
+URL: ${url}
+Page title: ${title}
+Meta tags:
+${metaTags.slice(0, 20).join('\n')}
+
+Page text (first 3000 chars):
+${textContent}
+
+Extract the following from this job listing page:
+1. company_name — The name of the hiring company (NOT the job board like LinkedIn, Indeed, Glassdoor)
+2. role — The job title/position being advertised
+
+Return JSON only with exactly these fields:
+{"company_name": "...", "role": "..."}
+
+Rules:
+- If the page is from a job board (LinkedIn, Indeed, etc.), the company is the one hiring, not the job board itself.
+- Use the official company name, not abbreviations.
+- Use the exact job title as listed.
+- If you can't determine one of the fields, use an empty string "".
+No explanation.`;
+
+    return withRetry(
+      async () => {
+        const response = await withTimeout(
+          () =>
+            client.chat.completions.create({
+              model: 'gpt-4o-mini',
+              messages: [{ role: 'user', content: prompt }],
+              response_format: { type: 'json_object' },
+              max_tokens: 150,
+              temperature: 0,
+            }),
+          15_000,
+          'openai.extractFromJobPage'
+        );
+
+        const raw = response.choices[0]?.message?.content ?? '{}';
+        try {
+          const parsed = JSON.parse(raw) as Record<string, unknown>;
+          return {
+            companyName: typeof parsed.company_name === 'string' ? parsed.company_name : '',
+            role: typeof parsed.role === 'string' ? parsed.role : '',
+          };
+        } catch {
+          logger.warn('Failed to parse job page extraction', { raw });
+          return { companyName: '', role: '' };
+        }
+      },
+      {
+        maxAttempts: 2,
+        initialDelayMs: 1_000,
+        shouldRetry: isTransientError,
+        context: 'openai.extractFromJobPage',
+      }
+    );
+  }
+
   // ─── Private ───────────────────────────────────────────────────────────────
 
   private parseExtraction(raw: string): ExtractionResult {
@@ -310,6 +416,143 @@ Return JSON only. No explanation.`;
       // ignore
     }
     return null;
+  }
+
+  // ─── LinkedIn Profile Extraction ──────────────────────────────────────────
+
+  /**
+   * Extracts a person's name, current role, and a short bio sentence from a
+   * LinkedIn profile URL. Works even when LinkedIn returns an authwall page —
+   * og:title / og:description / JSON-LD data is still present in those pages.
+   */
+  async extractFromLinkedIn(
+    url: string,
+    pageHtml: string | null
+  ): Promise<LinkedInProfileExtractionResult> {
+    const slugMatch = /linkedin\.com\/in\/([^/?#]+)/i.exec(url);
+    const slug = slugMatch?.[1] ?? '';
+
+    // ── Helper: extract a single meta tag value ──
+    const getMeta = (html: string, ...props: string[]): string => {
+      for (const prop of props) {
+        const re = new RegExp(
+          `<meta[^>]+(?:property|name)=["']${prop}["'][^>]+content=["']([^"']+)["']`,
+          'i'
+        );
+        const m = re.exec(html) ||
+          new RegExp(
+            `<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${prop}["']`,
+            'i'
+          ).exec(html);
+        if (m) return m[1].trim();
+      }
+      return '';
+    };
+
+    // ── Helper: extract JSON-LD Person block ──
+    const getJsonLd = (html: string): string => {
+      const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+      const chunks: string[] = [];
+      let m;
+      while ((m = re.exec(html)) !== null) {
+        const t = m[1].trim();
+        if (/"@type"\s*:\s*"Person"/i.test(t)) chunks.push(t.slice(0, 800));
+      }
+      return chunks.join('\n').slice(0, 1200);
+    };
+
+    // ── Collect all signals from whatever HTML we got ──
+    let signals = '';
+    if (pageHtml) {
+      const titleTag = (/<title[^>]*>([\s\S]*?)<\/title>/i.exec(pageHtml) ?? [])[1]
+        ?.replace(/\s+/g, ' ')
+        .trim() ?? '';
+      const ogTitle       = getMeta(pageHtml, 'og:title');
+      const ogDescription = getMeta(pageHtml, 'og:description');
+      const twitterTitle  = getMeta(pageHtml, 'twitter:title');
+      const twitterDesc   = getMeta(pageHtml, 'twitter:description');
+      const description   = getMeta(pageHtml, 'description');
+      const jsonLd        = getJsonLd(pageHtml);
+
+      signals = [
+        titleTag       && `Page title: ${titleTag}`,
+        ogTitle        && `og:title: ${ogTitle}`,
+        twitterTitle   && `twitter:title: ${twitterTitle}`,
+        ogDescription  && `og:description: ${ogDescription}`,
+        twitterDesc    && `twitter:description: ${twitterDesc}`,
+        description    && `meta description: ${description}`,
+        jsonLd         && `JSON-LD:\n${jsonLd}`,
+      ]
+        .filter(Boolean)
+        .join('\n');
+    }
+
+    // ── Use OpenAI if configured ──
+    if (this.client && (signals || slug)) {
+      const prompt = `You are extracting information about a person from their LinkedIn profile metadata.
+
+LinkedIn URL: ${url}
+URL slug: ${slug}
+
+Available page signals:
+${signals || '(no page content available — use URL slug only)'}
+
+Extract the following and return JSON with exactly these fields:
+- "name": The person's full name (use og:title or JSON-LD "name" field; the format is usually "Full Name - Headline | LinkedIn")
+- "role": Their current job title and employer (e.g. "Senior Engineer at Acme Corp"). Look in og:title after the dash, or JSON-LD "jobTitle"/"worksFor".
+- "bio": A single short sentence (max 20 words) describing who this person is, written in third person. Derive it from the description/headline. If there is no useful information, return an empty string "".
+
+Rules:
+- Strip " | LinkedIn" from the end of titles.
+- The part before " - " in og:title is typically the name; the part after is the headline/role.
+- Never invent information — only use what is present in the signals.
+
+Return JSON only. No explanation.`;
+
+      try {
+        const response = await withTimeout(
+          () =>
+            this.client!.chat.completions.create({
+              model: 'gpt-4o-mini',
+              messages: [{ role: 'user', content: prompt }],
+              response_format: { type: 'json_object' },
+              max_tokens: 150,
+              temperature: 0,
+            }),
+          12_000,
+          'openai.extractFromLinkedIn'
+        );
+
+        const raw = response.choices[0]?.message?.content ?? '{}';
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        const name = typeof parsed.name === 'string' ? parsed.name.trim() : '';
+        const role = typeof parsed.role === 'string' ? parsed.role.trim() : '';
+        const bio  = typeof parsed.bio  === 'string' ? parsed.bio.trim()  : '';
+        if (name) {
+          return { name, role, bio };
+        }
+      } catch (err) {
+        logger.warn('LinkedIn OpenAI extraction failed, falling back to slug', {
+          url,
+          error: err instanceof Error ? err.message : err,
+        });
+      }
+    }
+
+    // ── Fallback: slug-derived name only ──
+    // Only strip suffix if it contains a digit (random LinkedIn IDs like "ab12cd")
+    const nameFromSlug = slug
+      .replace(/-[a-z0-9]*\d[a-z0-9]*$/i, '')
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .trim();
+
+    return {
+      name: nameFromSlug,
+      role: '',
+      bio: '',
+      warning: 'Could not fetch LinkedIn profile — name inferred from URL. Please verify and add the role manually.',
+    };
   }
 }
 

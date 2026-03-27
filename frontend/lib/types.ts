@@ -74,6 +74,30 @@ export interface CompaniesResponse {
 export interface CompanyDetailResponse {
   company: Company;
   interactions: JobInteraction[];
+  contacts: CompanyContact[];
+  source_lead: Lead | null;
+  source_lead_moves: LeadMove[];
+  source_lead_contacts: LeadContact[];
+}
+
+// ─── Company Contacts ─────────────────────────────────────────────────────────
+
+export interface CompanyContact {
+  id: number;
+  company_id: number;
+  name: string;
+  role: string | null;
+  linkedin_url: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ExtractLinkedInResponse {
+  name: string;
+  role: string;
+  bio: string;
+  warning?: string;
 }
 
 // ─── Leads ────────────────────────────────────────────────────────────────────
@@ -92,6 +116,7 @@ export interface Lead {
   id: number;
   company_name: string;
   role: string | null;
+  job_url: string | null;
   contact_person: string | null;
   contact_source: LeadSource | null;
   date_first_contacted: string | null;
@@ -113,6 +138,20 @@ export interface LeadMove {
   created_at: string;
 }
 
+export type ContactStatus = 'identified' | 'connected' | 'messaged' | 'replied' | 'referred';
+
+export interface LeadContact {
+  id: number;
+  lead_id: number;
+  name: string;
+  role: string | null;
+  linkedin_url: string | null;
+  status: ContactStatus;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface LeadsResponse {
   leads: Lead[];
 }
@@ -120,9 +159,16 @@ export interface LeadsResponse {
 export interface LeadDetailResponse {
   lead: Lead;
   moves: LeadMove[];
+  contacts: LeadContact[];
 }
 
 export interface ConvertLeadResponse {
   lead: Lead;
   company: Company;
+}
+
+export interface ExtractUrlResponse {
+  company_name: string;
+  role: string;
+  warning?: string;
 }

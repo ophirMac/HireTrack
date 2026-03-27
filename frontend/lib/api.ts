@@ -7,6 +7,10 @@ import type {
   ConvertLeadResponse,
   Lead,
   LeadMove,
+  LeadContact,
+  ExtractUrlResponse,
+  CompanyContact,
+  ExtractLinkedInResponse,
 } from './types';
 
 export const API_BASE =
@@ -104,3 +108,89 @@ export const deleteLeadMove = (
 
 export const convertLead = (id: number): Promise<ConvertLeadResponse> =>
   request<ConvertLeadResponse>(`/api/leads/${id}/convert`, { method: 'POST' });
+
+// ─── Lead URL Extraction ──────────────────────────────────────────────────────
+
+export const extractJobUrl = (url: string): Promise<ExtractUrlResponse> =>
+  request<ExtractUrlResponse>('/api/leads/extract-url', {
+    method: 'POST',
+    body: JSON.stringify({ url }),
+  });
+
+// ─── Lead Contacts ────────────────────────────────────────────────────────────
+
+export const fetchLeadContacts = (
+  leadId: number
+): Promise<{ contacts: LeadContact[] }> =>
+  request<{ contacts: LeadContact[] }>(`/api/leads/${leadId}/contacts`);
+
+export const createLeadContact = (
+  leadId: number,
+  data: Partial<LeadContact>
+): Promise<{ contact: LeadContact }> =>
+  request<{ contact: LeadContact }>(`/api/leads/${leadId}/contacts`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const updateLeadContact = (
+  leadId: number,
+  contactId: number,
+  data: Partial<LeadContact>
+): Promise<{ contact: LeadContact }> =>
+  request<{ contact: LeadContact }>(`/api/leads/${leadId}/contacts/${contactId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+
+export const deleteLeadContact = (
+  leadId: number,
+  contactId: number
+): Promise<{ success: boolean }> =>
+  request<{ success: boolean }>(`/api/leads/${leadId}/contacts/${contactId}`, {
+    method: 'DELETE',
+  });
+
+// ─── Company Contacts ─────────────────────────────────────────────────────────
+
+export const extractLinkedInProfile = (url: string): Promise<ExtractLinkedInResponse> =>
+  request<ExtractLinkedInResponse>('/api/companies/extract-linkedin', {
+    method: 'POST',
+    body: JSON.stringify({ url }),
+  });
+
+export const createCompanyContact = (
+  companyId: number,
+  data: Partial<CompanyContact>
+): Promise<{ contact: CompanyContact }> =>
+  request<{ contact: CompanyContact }>(`/api/companies/${companyId}/contacts`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+
+export const updateCompanyContact = (
+  companyId: number,
+  contactId: number,
+  data: Partial<CompanyContact>
+): Promise<{ contact: CompanyContact }> =>
+  request<{ contact: CompanyContact }>(`/api/companies/${companyId}/contacts/${contactId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+
+export const deleteCompanyContact = (
+  companyId: number,
+  contactId: number
+): Promise<{ success: boolean }> =>
+  request<{ success: boolean }>(`/api/companies/${companyId}/contacts/${contactId}`, {
+    method: 'DELETE',
+  });
+
+export const updateCompanySourceLead = (
+  companyId: number,
+  data: Partial<import('./types').Lead>
+): Promise<{ lead: import('./types').Lead }> =>
+  request<{ lead: import('./types').Lead }>(`/api/companies/${companyId}/lead`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
