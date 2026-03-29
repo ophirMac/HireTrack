@@ -29,12 +29,17 @@ interface Props {
 
 export default function ContactsPanel({ contacts, onAdd, onUpdateStatus, onDelete }: Props) {
   const [showForm, setShowForm] = useState(false);
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const [linkedinUrl, setLinkedinUrl] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [quickUrl, setQuickUrl] = useState('');
+  const [quickName, setQuickName] = useState('');
+  const [quickRole, setQuickRole] = useState('');
+  const [quickSaving, setQuickSaving] = useState(false);
 
   const inputClass =
     'w-full bg-surface border border-surface-border rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-brand transition-colors';
@@ -69,6 +74,47 @@ export default function ContactsPanel({ contacts, onAdd, onUpdateStatus, onDelet
     }
   }
 
+  function parseLinkedInName(url: string): string {
+    try {
+      const path = new URL(url).pathname;
+      const match = path.match(/\/in\/([^/]+)/);
+      if (!match) return '';
+      // Remove trailing ID numbers (e.g., "john-doe-1a2b3c" → "john doe")
+      const slug = match[1].replace(/-[a-f0-9]{5,}$/i, '').replace(/-\d+$/, '');
+      return slug
+        .split('-')
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+    } catch {
+      return '';
+    }
+  }
+
+  function handleQuickUrlChange(url: string) {
+    setQuickUrl(url);
+    const parsed = parseLinkedInName(url);
+    if (parsed) setQuickName(parsed);
+  }
+
+  async function handleQuickAdd(e: React.FormEvent) {
+    e.preventDefault();
+    if (!quickName.trim()) return;
+    setQuickSaving(true);
+    try {
+      await onAdd({
+        name: quickName.trim(),
+        role: quickRole.trim() || undefined,
+        linkedin_url: quickUrl.trim() || undefined,
+      });
+      setQuickUrl('');
+      setQuickName('');
+      setQuickRole('');
+      setShowQuickAdd(false);
+    } finally {
+      setQuickSaving(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -78,16 +124,82 @@ export default function ContactsPanel({ contacts, onAdd, onUpdateStatus, onDelet
           </svg>
           Contacts ({contacts.length})
         </h2>
-        <button
-          onClick={() => setShowForm((v) => !v)}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-brand/15 text-brand border border-brand/25 hover:bg-brand/25 transition-colors font-medium"
-        >
-          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-          {showForm ? 'Cancel' : 'Add Contact'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setShowQuickAdd((v) => !v); setShowForm(false); }}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-[#0A66C2]/15 text-[#0A66C2] border border-[#0A66C2]/25 hover:bg-[#0A66C2]/25 transition-colors font-medium"
+          >
+            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+            </svg>
+            {showQuickAdd ? 'Cancel' : 'Quick Add'}
+          </button>
+          <button
+            onClick={() => { setShowForm((v) => !v); setShowQuickAdd(false); }}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-brand/15 text-brand border border-brand/25 hover:bg-brand/25 transition-colors font-medium"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            {showForm ? 'Cancel' : 'Add Contact'}
+          </button>
+        </div>
       </div>
+
+      {/* Quick add from LinkedIn */}
+      {showQuickAdd && (
+        <form onSubmit={handleQuickAdd} className="bg-surface-elevated/50 rounded-lg p-4 space-y-3 border border-[#0A66C2]/20">
+          <div className="flex items-center gap-2 mb-1">
+            <svg className="w-3.5 h-3.5 text-[#0A66C2]" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+            </svg>
+            <span className="text-xs font-medium text-zinc-400">Paste a LinkedIn profile URL to quickly add a contact</span>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-zinc-400 mb-1">LinkedIn Profile URL</label>
+            <input
+              type="url"
+              value={quickUrl}
+              onChange={(e) => handleQuickUrlChange(e.target.value)}
+              placeholder="https://linkedin.com/in/jane-doe"
+              className={inputClass}
+              autoFocus
+            />
+          </div>
+          {(quickName || quickUrl) && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">Name *</label>
+                <input
+                  type="text"
+                  value={quickName}
+                  onChange={(e) => setQuickName(e.target.value)}
+                  placeholder="Jane Doe"
+                  className={inputClass}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-1">Role / Title</label>
+                <input
+                  type="text"
+                  value={quickRole}
+                  onChange={(e) => setQuickRole(e.target.value)}
+                  placeholder="Engineering Manager"
+                  className={inputClass}
+                />
+              </div>
+            </div>
+          )}
+          <button
+            type="submit"
+            disabled={quickSaving || !quickName.trim()}
+            className="px-4 py-2 rounded-lg bg-[#0A66C2] text-white text-sm font-medium hover:bg-[#004182] disabled:opacity-50 transition-colors"
+          >
+            {quickSaving ? 'Adding…' : 'Add Contact'}
+          </button>
+        </form>
+      )}
 
       {/* Add contact form */}
       {showForm && (
