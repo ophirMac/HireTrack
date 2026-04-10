@@ -183,6 +183,7 @@ export default function LeadForm({ initial = {}, onSubmit, onCancel, submitLabel
         >
           Cancel
         </button>
+        <div></div>
       </div>
     </form>
   );
