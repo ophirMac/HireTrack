@@ -411,6 +411,7 @@ interface ScanStatus {
 #### `company.service.ts`
 - `deduplicateCompany(domain, name)` → find-or-create company record
 - Priority: exact domain match → AI domain match → fuzzy name match → create new
+- After creating a new company, automatically checks for a matching non-converted lead (by name). If found: migrates its contacts to company contacts, then deletes the lead.
 - `inferStatus(interactions)` → compute `current_status` from all interactions
 
 #### `logo.service.ts`
