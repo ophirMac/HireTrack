@@ -763,6 +763,17 @@ export function getLeadByConvertedCompanyId(companyId: number): Lead | undefined
   return r ? row<Lead>(r) : undefined;
 }
 
+export function findLeadByCompanyName(name: string): Lead | undefined {
+  const exact = getDb()
+    .prepare(`SELECT * FROM leads WHERE lower(company_name) = lower(?) AND status != 'converted' LIMIT 1`)
+    .get(name);
+  if (exact) return row<Lead>(exact);
+  const like = getDb()
+    .prepare(`SELECT * FROM leads WHERE lower(company_name) LIKE lower(?) AND status != 'converted' LIMIT 1`)
+    .get(`%${name}%`);
+  return like ? row<Lead>(like) : undefined;
+}
+
 export function createLead(data: {
   company_name: string;
   role?: string | null;

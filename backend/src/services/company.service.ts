@@ -25,6 +25,10 @@ import {
   createCompany,
   updateCompanyStatus,
   getInteractionsByCompany,
+  findLeadByCompanyName,
+  listLeadContacts,
+  createCompanyContact,
+  deleteLead,
 } from '../db';
 import { ExtractionResult } from './openai.service';
 import { logger } from '../utils/logger';
@@ -107,6 +111,23 @@ export class CompanyService {
       id: company.id,
       domain: resolvedDomain,
     });
+
+    // If a matching lead exists, migrate its contacts then delete it
+    const matchingLead = findLeadByCompanyName(resolvedName);
+    if (matchingLead) {
+      const leadContacts = listLeadContacts(matchingLead.id);
+      for (const contact of leadContacts) {
+        createCompanyContact({
+          company_id: company.id,
+          name: contact.name,
+          role: contact.role,
+          linkedin_url: contact.linkedin_url,
+          notes: contact.notes,
+        });
+      }
+      deleteLead(matchingLead.id);
+      logger.info(`Absorbed lead "${matchingLead.company_name}" (id=${matchingLead.id}) into company id=${company.id} — ${leadContacts.length} contact(s) migrated`);
+    }
 
     return company;
   }
