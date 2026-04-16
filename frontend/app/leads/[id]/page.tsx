@@ -131,7 +131,7 @@ export default function LeadDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="p-6 max-w-4xl mx-auto space-y-4">
+      <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-4">
         <div className="h-8 w-48 bg-surface-elevated rounded animate-pulse" />
         <div className="card h-40 animate-pulse" />
         <div className="card h-60 animate-pulse" />
@@ -141,7 +141,7 @@ export default function LeadDetailPage() {
 
   if (error || !data) {
     return (
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="p-4 sm:p-6 max-w-4xl mx-auto">
         <div className="card p-6 text-center">
           <p className="text-sm text-red-400">Failed to load lead. Is the backend running?</p>
           <Link href="/leads" className="mt-3 inline-block text-xs text-brand hover:underline">← Back to Leads</Link>
@@ -153,7 +153,7 @@ export default function LeadDetailPage() {
   const { lead, moves, contacts } = data;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-6">
       {/* Back link */}
       <Link href="/leads" className="inline-flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">

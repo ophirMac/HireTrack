@@ -131,7 +131,7 @@ export default function CompanyDetailPage() {
 
   if (isNaN(id)) {
     return (
-      <div className="px-6 py-6">
+      <div className="px-4 sm:px-6 py-6">
         <p className="text-red-400">Invalid company ID.</p>
       </div>
     );
@@ -139,7 +139,7 @@ export default function CompanyDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="px-6 py-6 max-w-3xl mx-auto space-y-4">
+      <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto space-y-4">
         <div className="h-8 w-48 rounded-lg animate-pulse bg-surface-elevated" />
         <div className="card h-24 animate-pulse bg-surface-elevated" />
         <div className="space-y-3">
@@ -153,7 +153,7 @@ export default function CompanyDetailPage() {
 
   if (error || !data) {
     return (
-      <div className="px-6 py-6">
+      <div className="px-4 sm:px-6 py-6">
         <p className="text-red-400">Company not found.</p>
       </div>
     );
@@ -176,7 +176,7 @@ export default function CompanyDetailPage() {
     'w-full bg-surface border border-surface-border rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-brand transition-colors';
 
   return (
-    <div className="px-6 py-6 max-w-3xl mx-auto">
+    <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
       {/* Back */}
       <button
         onClick={() => router.back()}
@@ -190,7 +190,7 @@ export default function CompanyDetailPage() {
 
       {/* Company header */}
       <div className="card p-5 mb-6">
-        <div className="flex items-start gap-4">
+        <div className="flex flex-wrap items-start gap-4">
           {/* Logo / Avatar */}
           <div className="w-12 h-12 rounded-xl overflow-hidden bg-surface-elevated border border-surface-border shrink-0 flex items-center justify-center">
             {company.logo_url ? (
@@ -245,8 +245,8 @@ export default function CompanyDetailPage() {
             )}
           </div>
 
-          {/* Stats */}
-          <div className="flex gap-4 text-center shrink-0">
+          {/* Stats — full-width on mobile, auto on sm+ */}
+          <div className="flex gap-4 text-center w-full sm:w-auto border-t border-surface-border sm:border-0 pt-3 sm:pt-0">
             <div>
               <p className="text-xs text-zinc-500">Interactions</p>
               <p className="text-xl font-bold text-zinc-100">{interactions.length}</p>

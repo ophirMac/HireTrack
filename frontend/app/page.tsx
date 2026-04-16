@@ -84,7 +84,7 @@ export default function DashboardPage() {
   const offers = data?.companies.filter((c) => c.current_status === 'offer').length ?? 0;
 
   return (
-    <div className="px-6 py-6 max-w-5xl mx-auto">
+    <div className="px-4 sm:px-6 py-6 max-w-5xl mx-auto">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-zinc-100">Job Pipeline</h1>
@@ -114,7 +114,7 @@ export default function DashboardPage() {
       )}
 
       {/* Stats row */}
-      <div className="grid grid-cols-4 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
         {[
           { label: 'Companies', value: totalCompanies },
           { label: 'Active', value: activeApplications, highlight: true },
@@ -160,7 +160,7 @@ export default function DashboardPage() {
           placeholder="Search companies…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="flex-1 min-w-[180px] max-w-[280px] px-3 py-2 rounded-lg bg-surface-card border border-surface-border text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-brand/50 transition-colors"
+          className="flex-1 min-w-0 sm:max-w-[280px] px-3 py-2 rounded-lg bg-surface-card border border-surface-border text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-brand/50 transition-colors"
         />
       </div>
 

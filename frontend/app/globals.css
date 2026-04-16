@@ -8,6 +8,8 @@
   html {
     font-family: 'Inter', system-ui, sans-serif;
     -webkit-font-smoothing: antialiased;
+    /* Prevent any stray wide element from creating a horizontal scrollbar */
+    overflow-x: hidden;
   }
 
   body {
