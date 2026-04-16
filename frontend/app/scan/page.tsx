@@ -16,9 +16,9 @@ export default function ScanPage() {
   );
 
   return (
-    <div className="px-6 py-6 max-w-4xl mx-auto">
+    <div className="px-4 sm:px-6 py-6 max-w-4xl mx-auto">
       {/* Page header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
           <h1 className="text-xl font-semibold text-zinc-100">Scan Monitor</h1>
           <p className="text-sm text-zinc-500 mt-0.5">
@@ -39,7 +39,7 @@ export default function ScanPage() {
       {isLoading ? (
         <div className="space-y-4">
           <div className="card h-32 animate-pulse bg-surface-elevated" />
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {Array.from({ length: 4 }).map((_, i) => (
               <div key={i} className="card h-20 animate-pulse bg-surface-elevated" />
             ))}

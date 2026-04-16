@@ -58,7 +58,7 @@ export default function ScanProgressPanel({ data, onRefresh }: Props) {
     <div className="space-y-6">
       {/* Overall status bar */}
       <div className="card p-6">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
           <div>
             <h2 className="font-semibold text-zinc-100">
               {historyDone ? 'Incremental Sync' : 'Initial Historical Scan'}
@@ -172,13 +172,13 @@ export default function ScanProgressPanel({ data, onRefresh }: Props) {
           <div className="divide-y divide-surface-border">
             {recentRuns.map((run) => (
               <div key={run.id} className="px-5 py-3">
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-wrap items-start justify-between gap-y-1 gap-x-3">
                   <div className="flex items-center gap-3 min-w-0">
                     <RunStatusBadge status={run.status} />
                     <span className="text-xs text-zinc-400 capitalize">{run.scan_type}</span>
                     <span className="text-xs text-zinc-600">#{run.id}</span>
                   </div>
-                  <div className="flex items-center gap-4 text-xs text-zinc-500 shrink-0">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-zinc-500">
                     <span>{run.emails_scanned.toLocaleString()} scanned</span>
                     <span className="text-emerald-500">{run.job_emails_detected} job emails</span>
                     <span>{format(new Date(run.started_at), 'MMM d · HH:mm')}</span>

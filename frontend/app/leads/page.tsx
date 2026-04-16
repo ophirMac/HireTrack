@@ -157,14 +157,14 @@ export default function LeadsPage() {
   );
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-6xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="flex-1 min-w-0">
           <h1 className="text-xl font-semibold text-white">Leads</h1>
           <p className="text-sm text-zinc-500 mt-0.5">Track potential opportunities before you apply</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => { setShowQuickAdd(true); setShowForm(false); }}
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0A66C2] text-white text-sm font-medium hover:bg-[#004182] transition-colors"
@@ -353,7 +353,7 @@ export default function LeadsPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search company or role…"
-          className="ml-auto w-52 bg-surface border border-surface-border rounded-lg px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-brand transition-colors"
+          className="w-full sm:w-52 sm:ml-auto bg-surface border border-surface-border rounded-lg px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-brand transition-colors"
         />
       </div>
 
@@ -378,7 +378,7 @@ export default function LeadsPage() {
           </p>
         </div>
       ) : (
-        <div className="card overflow-hidden">
+        <div className="card overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-surface-border">
