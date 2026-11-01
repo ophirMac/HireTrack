@@ -342,6 +342,45 @@ On restart, the server:
 
 ---
 
+## Subscriptions Tracker
+
+A second feature that reuses the same Gmail connection: **`/subscriptions`** finds your recurring
+payments in your inbox, shows what you pay per month/year, and suggests what to cancel and **when**.
+
+**How it works**
+
+1. Gmail search for billing emails (receipts, renewals, trials, failed payments, cancellations) over the
+   last 14 months on the first run, then incrementally (startup + daily at 06:30). Promotions are excluded.
+2. Each new email → `gpt-4o-mini` extracts service, plan, amount, currency, billing cycle, next renewal,
+   manage/cancel link, and the event type. App Store / Google Play / Stripe / PayPal receipts are attributed
+   to the underlying product (e.g. "iCloud+", not "Apple").
+3. Events are stored per subscription (`subscription_events`), and the subscription's price, cycle, status
+   and next renewal are **recomputed from the full history**, so results don't depend on scan order.
+4. Insights (`subscription-insights.service.ts`) normalize everything to monthly cost and build
+   rule-based suggestions: planned cancels (cancel the day before renewal), trials ending, annual renewals
+   within 30 days, overlapping services in the same category, price increases, failed payments,
+   subscriptions with no recent receipt, and monthly→annual switches.
+
+**In the UI** you can mark each one *Keep / Not sure / Cancel it*, mark it cancelled, edit it (manual edits
+are pinned against future scans), remove mis-detected emails, add subscriptions manually, and pick a
+display currency.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/subscriptions` | List + summary + suggestions + scan status |
+| `GET /api/subscriptions/:id` | Detail + email history |
+| `POST /api/subscriptions` | Add manually |
+| `PATCH /api/subscriptions/:id` | Edit / set decision / status |
+| `DELETE /api/subscriptions/:id` | Remove |
+| `POST /api/subscriptions/:id/reset` | Drop manual edits, re-derive from emails |
+| `DELETE /api/subscriptions/:id/events/:eventId` | Unlink a mis-detected email |
+| `POST /api/subscriptions/scan[?full=1]` | Scan now (`full=1` re-reads the whole window) |
+
+Optional env vars: `SUBSCRIPTION_LOOKBACK_MONTHS` (default 14), `SUBSCRIPTION_MAX_MESSAGES` per run
+(default 1500), `SUBSCRIPTION_FX_RATES` (JSON of units per 1 USD, e.g. `{"ILS":3.65}`).
+
+---
+
 ## Tech Stack
 
 | Layer | Technology |
