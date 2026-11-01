@@ -8,6 +8,7 @@ import authRouter from './routes/auth';
 import companiesRouter from './routes/companies';
 import scanRouter from './routes/scan';
 import leadsRouter from './routes/leads';
+import subscriptionsRouter from './routes/subscriptions';
 import { errorHandler, notFoundHandler } from './middleware/error';
 import { openAIService } from './services/openai.service';
 import { BACKEND_PUBLIC_URL, FRONTEND_ORIGIN, PORT } from './config/env';
@@ -42,6 +43,7 @@ app.use('/auth', authRouter);
 app.use('/api/companies', companiesRouter);
 app.use('/api/scan', scanRouter);
 app.use('/api/leads', leadsRouter);
+app.use('/api/subscriptions', subscriptionsRouter);
 
 // ─── Error Handling ───────────────────────────────────────────────────────────
 

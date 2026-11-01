@@ -21,6 +21,7 @@ import { getSyncState } from '../db';
 import { scannerService } from '../services/scanner.service';
 import { gmailService } from '../services/gmail.service';
 import { openAIService } from '../services/openai.service';
+import { subscriptionScanner } from '../services/subscription-scanner.service';
 import { logger } from '../utils/logger';
 import { BACKEND_PUBLIC_URL } from '../config/env';
 
@@ -92,5 +93,16 @@ export function startScheduler(): void {
     { timezone: 'America/New_York' }
   );
 
-  logger.info('[scheduler] Scheduler initialized — daily scan cron at 06:00');
+  // ── Subscriptions: catch-up shortly after boot + daily at 06:30 ─────────
+  const runSubscriptionScan = (reason: string): void => {
+    if (!gmailService.isAuthenticated() || subscriptionScanner.isRunning()) return;
+    logger.info(`[scheduler] Subscription scan (${reason})`);
+    subscriptionScanner.run().catch((err) => {
+      logger.error('[scheduler] Subscription scan failed', { error: String(err) });
+    });
+  };
+  setTimeout(() => runSubscriptionScan('startup'), 15_000);
+  cron.schedule('30 6 * * *', () => runSubscriptionScan('daily cron'), { timezone: 'America/New_York' });
+
+  logger.info('[scheduler] Scheduler initialized — daily scans at 06:00 (jobs) and 06:30 (subscriptions)');
 }
